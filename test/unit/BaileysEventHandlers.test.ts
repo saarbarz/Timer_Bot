@@ -35,9 +35,9 @@ describe("registerBaileysEventHandlers", () => {
     expect(events.listenerCount("creds.update")).toBe(1);
   });
 
-  it("saves credentials when creds.update fires", () => {
+  it("saves credentials when creds.update fires", async () => {
     const events = new FakeBaileysEvents();
-    const saveCredentials = vi.fn();
+    const saveCredentials = vi.fn(async () => undefined);
 
     registerBaileysEventHandlers(events, saveCredentials, {
       onConnectionUpdate: vi.fn(),
@@ -45,8 +45,26 @@ describe("registerBaileysEventHandlers", () => {
     });
 
     events.emit("creds.update", {});
+    await Promise.resolve();
 
     expect(saveCredentials).toHaveBeenCalledOnce();
+  });
+
+  it("reports credentials save errors", async () => {
+    const events = new FakeBaileysEvents();
+    const error = new Error("test disk failure");
+    const onCredentialsSaveError = vi.fn();
+
+    registerBaileysEventHandlers(events, vi.fn(async () => Promise.reject(error)), {
+      onConnectionUpdate: vi.fn(),
+      onQr: vi.fn(),
+      onCredentialsSaveError
+    });
+
+    events.emit("creds.update", {});
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(onCredentialsSaveError).toHaveBeenCalledWith(error);
   });
 
   it("renders QR and forwards connection updates", () => {

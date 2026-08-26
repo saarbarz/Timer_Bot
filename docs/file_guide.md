@@ -10,12 +10,14 @@
 ## Source
 
 - `src/index.ts`: minimal application entry point and smoke-testable startup summary.
+- `src/cli/gracefulShutdown.ts`: shared SIGINT/SIGTERM shutdown hook for CLI commands.
 - `src/config/AppConfig.ts`: local configuration for default timezone and generated local paths. It contains no credentials.
 - `src/cli/waConnect.ts`: manual CLI for opening a Baileys WhatsApp connection and showing the linked-device QR.
 - `src/cli/waSend.ts`: manual one-shot CLI for connecting to WhatsApp and sending one text message to an explicit phone-number recipient.
 - `src/whatsapp/WhatsAppAdapter.ts`: transport interface and internal send result types that future scheduler code must depend on instead of Baileys directly.
 - `src/whatsapp/BaileysConnectionState.ts`: pure mapping from Baileys connection updates to internal connection statuses.
-- `src/whatsapp/BaileysWhatsAppAdapter.ts`: Baileys-backed adapter that registers connection and credential events, persists auth under `auth/`, renders QR codes, and sends individual text messages.
+- `src/whatsapp/ConnectionManager.ts`: centralized lifecycle manager for connection status, bounded reconnect backoff, timer cancellation, and shutdown.
+- `src/whatsapp/BaileysWhatsAppAdapter.ts`: Baileys-backed adapter that opens/closes sockets, registers connection and credential events, persists auth under `auth/`, renders QR codes, sends individual text messages, and reports credential-save failures through structured logs.
 - `src/whatsapp/RecipientNormalizer.ts`: pure recipient normalization and validation for phone-number based individual WhatsApp recipients.
 - `src/whatsapp/SendTextNow.ts`: validation-first send-now service that converts validation and transport failures into `SendResult`.
 
@@ -23,8 +25,9 @@
 
 - `test/unit/config.test.ts`: Chunk 0 smoke tests for config and startup wiring.
 - `test/unit/BaileysConnectionState.test.ts`: Chunk 1 connection status transition tests.
-- `test/unit/BaileysReconnect.test.ts`: Chunk 1 reconnect decision tests.
-- `test/unit/BaileysEventHandlers.test.ts`: Chunk 1 tests for event handler registration, credential save callback wiring, and QR forwarding.
+- `test/unit/BaileysReconnect.test.ts`: reconnect decision tests, including relink-required Baileys close codes.
+- `test/unit/BaileysEventHandlers.test.ts`: tests for event handler registration, credential save callback wiring, QR forwarding, and credential-save error reporting.
+- `test/unit/ConnectionManager.test.ts`: fake-timer tests for bounded reconnect backoff, no reconnect on relink-required closes, and shutdown timer cancellation.
 - `test/unit/RecipientNormalizer.test.ts`: Chunk 2 tests for phone-number normalization and group rejection.
 - `test/unit/SendTextNow.test.ts`: Chunk 2 tests for empty text rejection, exactly-one adapter call on success, and transport exception mapping.
 

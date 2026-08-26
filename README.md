@@ -23,7 +23,7 @@ npm.cmd run wa:send -- --to <country-code-number> --text "test message"
 
 ## Current Scope
 
-The project has completed Chunk 2: Send Now. It can connect as a WhatsApp linked device and send one explicit text message. The next allowed chunk is Chunk 3: Persistent session & reconnect.
+The project has automated implementation for Chunk 3: Persistent session & reconnect. It can reuse the saved WhatsApp linked-device session, manages reconnect lifecycle through a `ConnectionManager`, and sends one explicit text message. Chunk 3 still needs the manual restart/no-new-QR/send test before Chunk 4 is allowed.
 
 ## WhatsApp QR Link Test
 
@@ -44,3 +44,16 @@ npm.cmd run wa:send -- --to <country-code-number> --text "test message"
 ```
 
 Send one test message only for Chunk 2, then confirm it appears on both the sender and receiver sides. Phone numbers and message contents are sensitive; do not paste real details into chat or commit them.
+
+## Chunk 3 Manual Restart Test
+
+1. Run `npm.cmd run wa:connect`.
+2. Confirm it reaches `WhatsApp connection is open.` without showing a new QR.
+3. Stop it with Ctrl+C.
+4. Run one send-now test again:
+
+```powershell
+npm.cmd run wa:send -- --to <country-code-number> --text "test message"
+```
+
+Use only a test number or consenting recipient. Do not paste real phone numbers or message text into chat.

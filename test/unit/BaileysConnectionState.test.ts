@@ -13,7 +13,7 @@ describe("mapBaileysConnectionUpdate", () => {
     expect(mapBaileysConnectionUpdate({ connection: "open" })).toBe("connected");
   });
 
-  it("maps logged out closes to logged_out", () => {
+  it("maps logged out closes to needs_relink", () => {
     expect(
       mapBaileysConnectionUpdate({
         connection: "close",
@@ -22,7 +22,7 @@ describe("mapBaileysConnectionUpdate", () => {
           error: new Boom("logged out", { statusCode: DisconnectReason.loggedOut })
         }
       })
-    ).toBe("logged_out");
+    ).toBe("needs_relink");
   });
 
   it("maps temporary closes to reconnect_needed", () => {

@@ -18,9 +18,7 @@ export function mapBaileysConnectionUpdate(
   }
 
   if (update.connection === "close") {
-    return getDisconnectStatusCode(update.lastDisconnect?.error) === DisconnectReason.loggedOut
-      ? "logged_out"
-      : "reconnect_needed";
+    return requiresRelinkBaileys(update) ? "needs_relink" : "reconnect_needed";
   }
 
   return undefined;
@@ -40,5 +38,20 @@ export function shouldReconnectBaileys(update: Partial<ConnectionState>): boolea
     return false;
   }
 
-  return getDisconnectStatusCode(update.lastDisconnect?.error) !== DisconnectReason.loggedOut;
+  return !requiresRelinkBaileys(update);
+}
+
+export function requiresRelinkBaileys(update: Partial<ConnectionState>): boolean {
+  if (update.connection !== "close") {
+    return false;
+  }
+
+  const statusCode = getDisconnectStatusCode(update.lastDisconnect?.error);
+  return (
+    statusCode === DisconnectReason.loggedOut ||
+    statusCode === DisconnectReason.connectionReplaced ||
+    statusCode === DisconnectReason.badSession ||
+    statusCode === DisconnectReason.multideviceMismatch ||
+    statusCode === DisconnectReason.forbidden
+  );
 }

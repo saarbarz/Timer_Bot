@@ -1,6 +1,7 @@
 import { BaileysWhatsAppAdapter } from "../whatsapp/BaileysWhatsAppAdapter.js";
 import { sendTextNow } from "../whatsapp/SendTextNow.js";
 import type { WhatsAppAdapter } from "../whatsapp/WhatsAppAdapter.js";
+import { installGracefulShutdown } from "./gracefulShutdown.js";
 
 interface SendCliArgs {
   readonly to: string;
@@ -21,9 +22,7 @@ await main(args).catch((error: unknown) => {
 async function main(sendArgs: SendCliArgs): Promise<void> {
   const adapter = new BaileysWhatsAppAdapter();
 
-  process.on("SIGINT", () => {
-    void adapter.disconnect().finally(() => process.exit(130));
-  });
+  installGracefulShutdown(adapter);
 
   try {
     await adapter.connect();
@@ -86,7 +85,7 @@ async function waitForConnected(
       return;
     }
 
-    if (status === "logged_out") {
+    if (status === "needs_relink") {
       throw new Error("WhatsApp session is logged out. Run npm.cmd run wa:connect to relink.");
     }
 

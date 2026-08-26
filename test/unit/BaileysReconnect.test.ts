@@ -27,6 +27,12 @@ describe("shouldReconnectBaileys", () => {
     expect(shouldReconnectBaileys(closeUpdate(DisconnectReason.loggedOut))).toBe(false);
   });
 
+  it("does not reconnect when the session needs manual attention", () => {
+    expect(shouldReconnectBaileys(closeUpdate(DisconnectReason.badSession))).toBe(false);
+    expect(shouldReconnectBaileys(closeUpdate(DisconnectReason.multideviceMismatch))).toBe(false);
+    expect(shouldReconnectBaileys(closeUpdate(DisconnectReason.forbidden))).toBe(false);
+  });
+
   it("does not reconnect for non-close updates", () => {
     expect(shouldReconnectBaileys({ connection: "open" })).toBe(false);
   });

@@ -218,3 +218,79 @@ Status: completed
 - No retries exist yet; transport failures are reported as retryable but not retried in Chunk 2.
 - Groups and arbitrary JIDs are intentionally rejected.
 - Phone-number validation is conservative and expects country-code digits.
+
+## Chunk 3 - Persistent Session & Reconnect
+
+Status: automated implementation complete; manual restart/send verification pending
+
+### Scope
+
+- Extract connection lifecycle and reconnect timers into a `ConnectionManager`.
+- Use bounded reconnect backoff for temporary disconnects: 1s, 2s, 5s, 10s, 30s, with small jitter by default.
+- Stop reconnect loops for relink-required Baileys closes.
+- Add graceful shutdown for `SIGINT` and `SIGTERM`.
+- Report `creds.update` save failures through structured logging instead of fire-and-forget.
+- Do not add scheduler, retries, contacts, groups, UI, or bulk sending.
+
+### Baileys API Inspected
+
+- Installed `@whiskeysockets/baileys@7.0.0-rc14` exports `DisconnectReason`.
+- Available disconnect codes include `connectionClosed`, `connectionLost`, `connectionReplaced`, `timedOut`, `loggedOut`, `badSession`, `restartRequired`, `multideviceMismatch`, `forbidden`, and `unavailableService`.
+- There is no literal `revoked` enum in this installed version; relink-required handling maps `loggedOut`, `connectionReplaced`, `badSession`, `multideviceMismatch`, and `forbidden` to internal `needs_relink`.
+
+### Files Changed
+
+- `src/whatsapp/WhatsAppAdapter.ts`: replaced `logged_out` status with `needs_relink` and added structured `WhatsAppLogEvent`/`WhatsAppLogger` types.
+- `src/whatsapp/BaileysConnectionState.ts`: added relink-required classification and updated reconnect decisions.
+- `src/whatsapp/ConnectionManager.ts`: added centralized lifecycle, bounded backoff, jitter, reconnect exhaustion logging, and shutdown timer cancellation.
+- `src/whatsapp/BaileysWhatsAppAdapter.ts`: delegated lifecycle to `ConnectionManager`, kept Baileys socket open/close responsibilities, and reported credential-save failures through sanitized structured logs.
+- `src/cli/gracefulShutdown.ts`: added shared CLI shutdown handler for `SIGINT` and `SIGTERM`.
+- `src/cli/waConnect.ts`: uses shared graceful shutdown.
+- `src/cli/waSend.ts`: uses shared graceful shutdown and treats `needs_relink` as the relink-required status.
+- `test/unit/ConnectionManager.test.ts`: added fake-timer reconnect and shutdown tests.
+- `test/unit/BaileysConnectionState.test.ts`: updated relink-required status expectation.
+- `test/unit/BaileysReconnect.test.ts`: added no-reconnect coverage for terminal/relink-required disconnect codes.
+- `test/unit/BaileysEventHandlers.test.ts`: added credential-save error reporting coverage.
+- `README.md`, `docs/project_state.md`, `docs/file_guide.md`, and `docs/bug_log.md`: updated for Chunk 3.
+
+### Commands Run
+
+- Inspected the source plan document for Chunk 3 acceptance criteria.
+- Inspected installed Baileys disconnect reason typings and runtime enum under `node_modules/@whiskeysockets/baileys`.
+- `npm.cmd run typecheck` -> failed once during implementation because `BaileysWhatsAppAdapter` still had a stale `this.status = "connecting"` assignment after lifecycle extraction.
+- `npm.cmd run typecheck` -> passed after removing the stale assignment.
+- `npm.cmd test` -> failed once because the new credential-save error test asserted before the async rejection handler ran.
+- `npm.cmd test` -> passed after fixing the test wait; 7 test files, 24 tests.
+- `npm.cmd run build` -> passed.
+
+### Verification
+
+- Typecheck passed.
+- Unit tests passed:
+  - temporary disconnects use the expected 1s, 2s, 5s fake-timer backoff sequence.
+  - relink-required closes do not reconnect.
+  - shutdown cancels reconnect timers and closes the active connection.
+  - `creds.update` invokes credential persistence.
+  - credential persistence failures are forwarded to a structured error handler.
+  - Baileys terminal/relink-required close codes do not reconnect-loop.
+- Build passed.
+- No lint script exists.
+
+### Manual Restart Test
+
+- Pending user verification.
+- Required steps:
+  1. Run `npm.cmd run wa:connect`.
+  2. Confirm it reaches `WhatsApp connection is open.` without displaying a new QR.
+  3. Stop the process with Ctrl+C.
+  4. Run one send-now test again with a test number or consenting recipient:
+     `npm.cmd run wa:send -- --to <country-code-number> --text "test message"`
+  5. Confirm the message appears once on both sender and receiver sides.
+- Do not paste real phone numbers, message contents, QR payloads, auth files, or account details into chat.
+
+### Known Limitations
+
+- Chunk 3 does not add the scheduler or send retry policy.
+- Reconnect backoff is for WhatsApp socket lifecycle only; message retry behavior is still a later chunk.
+- True exactly-once WhatsApp delivery still cannot be guaranteed without provider-side idempotency.
+- Chunk 4 must not start until the manual restart/no-new-QR/send test is confirmed.

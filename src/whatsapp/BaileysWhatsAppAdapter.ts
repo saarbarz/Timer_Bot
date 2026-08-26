@@ -11,9 +11,11 @@ import pino from "pino";
 import qrcode from "qrcode-terminal";
 
 import { appConfig } from "../config/AppConfig.js";
-import { mapBaileysConnectionUpdate, shouldReconnectBaileys } from "./BaileysConnectionState.js";
+import { ConnectionManager } from "./ConnectionManager.js";
 import type {
   NormalizedRecipient,
+  WhatsAppLogEvent,
+  WhatsAppLogger,
   SendResult,
   WhatsAppAdapter,
   WhatsAppConnectionStatus
@@ -26,7 +28,10 @@ export interface BaileysWhatsAppAdapterOptions {
   readonly authDir?: string;
   readonly socketFactory?: SocketFactory;
   readonly renderQr?: (qr: string) => void;
-  readonly log?: (message: string) => void;
+  readonly log?: WhatsAppLogger;
+  readonly reconnectDelaysMs?: readonly number[];
+  readonly jitterRatio?: number;
+  readonly random?: () => number;
   readonly reconnectDelayMs?: number;
   readonly maxReconnectAttempts?: number;
 }
@@ -35,13 +40,9 @@ export class BaileysWhatsAppAdapter implements WhatsAppAdapter {
   private readonly authDir: string;
   private readonly socketFactory: SocketFactory;
   private readonly renderQr: (qr: string) => void;
-  private readonly log: (message: string) => void;
-  private readonly reconnectDelayMs: number;
-  private readonly maxReconnectAttempts: number;
+  private readonly log: WhatsAppLogger;
+  private readonly connectionManager: ConnectionManager;
   private socket?: WASocket;
-  private status: WhatsAppConnectionStatus = "idle";
-  private reconnectAttempts = 0;
-  private disconnectRequested = false;
 
   constructor(options: BaileysWhatsAppAdapterOptions = {}) {
     this.authDir = options.authDir ?? appConfig.authDir;
@@ -55,29 +56,32 @@ export class BaileysWhatsAppAdapter implements WhatsAppAdapter {
           printQRInTerminal: false
         }));
     this.renderQr = options.renderQr ?? ((qr) => qrcode.generate(qr, { small: true }));
-    this.log = options.log ?? console.log;
-    this.reconnectDelayMs = options.reconnectDelayMs ?? 1_000;
-    this.maxReconnectAttempts = options.maxReconnectAttempts ?? 3;
+    this.log = options.log ?? defaultWhatsAppLogger;
+    this.connectionManager = new ConnectionManager({
+      openConnection: () => this.openSocket(),
+      closeConnection: () => this.closeSocket(),
+      log: this.log,
+      reconnectDelaysMs:
+        options.reconnectDelaysMs ?? legacyReconnectDelays(options.reconnectDelayMs, options.maxReconnectAttempts),
+      jitterRatio: options.jitterRatio,
+      random: options.random
+    });
   }
 
   async connect(): Promise<void> {
-    this.disconnectRequested = false;
-    await this.openSocket();
+    await this.connectionManager.start();
   }
 
   async disconnect(): Promise<void> {
-    this.disconnectRequested = true;
-    await this.socket?.end(undefined);
-    this.socket = undefined;
-    this.status = "idle";
+    await this.connectionManager.shutdown();
   }
 
   getStatus(): WhatsAppConnectionStatus {
-    return this.status;
+    return this.connectionManager.getStatus();
   }
 
   async sendText(recipient: NormalizedRecipient, text: string): Promise<SendResult> {
-    if (this.socket === undefined || this.status !== "connected") {
+    if (this.socket === undefined || this.connectionManager.getStatus() !== "connected") {
       return {
         success: false,
         errorCode: "not_connected",
@@ -101,54 +105,29 @@ export class BaileysWhatsAppAdapter implements WhatsAppAdapter {
   }
 
   private async openSocket(): Promise<void> {
-    this.status = "connecting";
-
     const { state, saveCreds } = await useMultiFileAuthState(path.resolve(this.authDir));
     this.socket = this.socketFactory(state);
 
     registerBaileysEventHandlers(this.socket.ev, saveCreds, {
-      onConnectionUpdate: (update) => this.handleConnectionUpdate(update),
-      onQr: (qr) => this.renderQr(qr)
+      onConnectionUpdate: (update) => this.connectionManager.handleConnectionUpdate(update),
+      onQr: (qr) => this.renderQr(qr),
+      onCredentialsSaveError: (error) => this.logCredentialsSaveError(error)
     });
   }
 
-  private handleConnectionUpdate(update: Partial<ConnectionState>): void {
-    const nextStatus = mapBaileysConnectionUpdate(update);
-    if (nextStatus === undefined) {
-      return;
-    }
-
-    this.status = nextStatus;
-    this.log(formatStatusMessage(nextStatus));
-
-    if (nextStatus === "connected") {
-      this.reconnectAttempts = 0;
-      return;
-    }
-
-    if (shouldReconnectBaileys(update)) {
-      this.scheduleReconnect();
-    }
+  private async closeSocket(): Promise<void> {
+    await this.socket?.end(undefined);
+    this.socket = undefined;
   }
 
-  private scheduleReconnect(): void {
-    if (this.disconnectRequested || this.reconnectAttempts >= this.maxReconnectAttempts) {
-      return;
-    }
-
-    this.reconnectAttempts += 1;
-    const attempt = this.reconnectAttempts;
-    this.log(`Reconnecting to WhatsApp, attempt ${attempt}/${this.maxReconnectAttempts}.`);
-
-    setTimeout(() => {
-      if (this.disconnectRequested) {
-        return;
-      }
-
-      void this.openSocket().catch(() => {
-        this.status = "reconnect_needed";
-      });
-    }, this.reconnectDelayMs);
+  private logCredentialsSaveError(error: unknown): void {
+    this.log({
+      level: "error",
+      event: "whatsapp.credentials_save_failed",
+      message: "Failed to save WhatsApp credentials.",
+      errorCode: "credentials_save_failed",
+      errorName: error instanceof Error ? error.name : typeof error
+    });
   }
 }
 
@@ -158,10 +137,15 @@ export function registerBaileysEventHandlers(
   handlers: {
     readonly onConnectionUpdate: (update: Partial<ConnectionState>) => void;
     readonly onQr: (qr: string) => void;
+    readonly onCredentialsSaveError?: (error: unknown) => void;
   }
 ): void {
   events.on("creds.update", () => {
-    void saveCredentials();
+    void Promise.resolve()
+      .then(() => saveCredentials())
+      .catch((error: unknown) => {
+        handlers.onCredentialsSaveError?.(error);
+      });
   });
 
   events.on("connection.update", (update) => {
@@ -173,19 +157,40 @@ export function registerBaileysEventHandlers(
   });
 }
 
-function formatStatusMessage(status: WhatsAppConnectionStatus): string {
-  switch (status) {
-    case "awaiting_qr":
-      return "WhatsApp link QR is ready. Scan it from WhatsApp > Linked devices.";
-    case "connected":
-      return "WhatsApp connection is open.";
-    case "logged_out":
-      return "WhatsApp session is logged out and needs relinking.";
-    case "reconnect_needed":
-      return "WhatsApp connection closed temporarily; reconnect is needed.";
-    case "connecting":
-      return "Connecting to WhatsApp.";
-    case "idle":
-      return "WhatsApp adapter is idle.";
+function legacyReconnectDelays(
+  reconnectDelayMs: number | undefined,
+  maxReconnectAttempts: number | undefined
+): readonly number[] | undefined {
+  if (reconnectDelayMs === undefined && maxReconnectAttempts === undefined) {
+    return undefined;
   }
+
+  const attempts = maxReconnectAttempts ?? 3;
+  const delayMs = reconnectDelayMs ?? 1_000;
+  return Array.from({ length: attempts }, () => delayMs);
+}
+
+function defaultWhatsAppLogger(event: WhatsAppLogEvent): void {
+  const details = [
+    event.attempt === undefined ? undefined : `attempt=${event.attempt}`,
+    event.maxAttempts === undefined ? undefined : `maxAttempts=${event.maxAttempts}`,
+    event.delayMs === undefined ? undefined : `delayMs=${event.delayMs}`,
+    event.errorCode === undefined ? undefined : `errorCode=${event.errorCode}`,
+    event.errorName === undefined ? undefined : `errorName=${event.errorName}`
+  ].filter((value): value is string => value !== undefined);
+
+  const suffix = details.length === 0 ? "" : ` (${details.join(", ")})`;
+  const line = `${event.message}${suffix}`;
+
+  if (event.level === "error") {
+    console.error(line);
+    return;
+  }
+
+  if (event.level === "warn") {
+    console.warn(line);
+    return;
+  }
+
+  console.log(line);
 }

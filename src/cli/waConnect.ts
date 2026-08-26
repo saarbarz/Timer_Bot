@@ -1,10 +1,9 @@
 import { BaileysWhatsAppAdapter } from "../whatsapp/BaileysWhatsAppAdapter.js";
+import { installGracefulShutdown } from "./gracefulShutdown.js";
 
 const adapter = new BaileysWhatsAppAdapter();
 
-process.on("SIGINT", () => {
-  void adapter.disconnect().finally(() => process.exit(0));
-});
+installGracefulShutdown(adapter);
 
 await adapter.connect();
 

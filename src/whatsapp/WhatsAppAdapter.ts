@@ -4,7 +4,7 @@ export type WhatsAppConnectionStatus =
   | "awaiting_qr"
   | "connected"
   | "reconnect_needed"
-  | "logged_out";
+  | "needs_relink";
 
 export type SendErrorCode =
   | "empty_recipient"
@@ -25,6 +25,19 @@ export interface SendResult {
   readonly errorCode?: SendErrorCode;
   readonly retryable?: boolean;
 }
+
+export interface WhatsAppLogEvent {
+  readonly level: "info" | "warn" | "error";
+  readonly event: string;
+  readonly message: string;
+  readonly attempt?: number;
+  readonly maxAttempts?: number;
+  readonly delayMs?: number;
+  readonly errorCode?: string;
+  readonly errorName?: string;
+}
+
+export type WhatsAppLogger = (event: WhatsAppLogEvent) => void;
 
 export interface WhatsAppAdapter {
   connect(): Promise<void>;
