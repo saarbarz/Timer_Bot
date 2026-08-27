@@ -21,6 +21,9 @@ export interface SchedulerWorkerRunResult {
   readonly sendFailed: number;
   readonly retryScheduled: number;
   readonly failed: number;
+  readonly messageId?: string;
+  readonly finalStatus?: ScheduledMessage["status"];
+  readonly updatedAtUtc?: string;
 }
 
 export class SchedulerWorker {
@@ -60,7 +63,10 @@ export class SchedulerWorker {
       sent: markedSent === undefined ? 0 : 1,
       sendFailed: 0,
       retryScheduled: 0,
-      failed: 0
+      failed: 0,
+      messageId: claimed.id,
+      finalStatus: markedSent?.status,
+      updatedAtUtc: markedSent?.updatedAtUtc ?? sentAtUtc
     };
   }
 
@@ -96,7 +102,10 @@ export class SchedulerWorker {
         sent: 0,
         sendFailed: 1,
         retryScheduled: retryable === undefined ? 0 : 1,
-        failed: 0
+        failed: 0,
+        messageId: claimed.id,
+        finalStatus: retryable?.status,
+        updatedAtUtc: retryable?.updatedAtUtc ?? now.toISOString()
       };
     }
 
@@ -107,7 +116,10 @@ export class SchedulerWorker {
       sent: 0,
       sendFailed: 1,
       retryScheduled: 0,
-      failed: failed === undefined ? 0 : 1
+      failed: failed === undefined ? 0 : 1,
+      messageId: claimed.id,
+      finalStatus: failed?.status,
+      updatedAtUtc: failed?.updatedAtUtc ?? now.toISOString()
     };
   }
 }

@@ -554,3 +554,82 @@ Status: completed
 - The worker has no process/polling CLI yet; that is reserved for Chunk 7.
 - Stale `processing` recovery after process crash is not implemented yet; that is reserved for Chunk 8.
 - If the process crashes after provider success but before SQLite marks `sent`, true exactly-once delivery still cannot be guaranteed without provider-side idempotency.
+
+## Chunk 7 - End-to-End CLI Scheduling
+
+Status: automated implementation completed; manual real scheduled WhatsApp delivery verification pending.
+
+### Scope
+
+- Add CLI commands to create, list, and cancel scheduled messages.
+- Support absolute local scheduling with `--at <YYYY-MM-DDTHH:mm[:ss]>`.
+- Support short manual tests with relative scheduling such as `--in 60s`, `--in 90s`, `--in 2m`, or `--in 1h`.
+- Add a process-mode worker CLI that connects to WhatsApp, waits for `connected`, then polls SQLite for due scheduled messages.
+- Wire scheduled sends to the real Baileys-backed transport through the existing `WhatsAppAdapter` abstraction.
+- Keep CLI output privacy-safe: message id/status/timestamps/retry metadata are printed, but recipient numbers and message text are not printed by list/worker output.
+- Do not implement Chunk 8 restart/overdue/cancel edge-case recovery.
+
+### Files Changed
+
+- `package.json`: added `schedule`, `schedule:list`, `schedule:cancel`, and `schedule:worker` scripts.
+- `src/cli/schedule.ts`: added schedule-create CLI.
+- `src/cli/scheduleArgs.ts`: added pure CLI argument parsing and `--in` relative time resolution.
+- `src/cli/scheduleList.ts`: added privacy-safe scheduled-message list CLI.
+- `src/cli/scheduleCancel.ts`: added pending-message cancel CLI.
+- `src/cli/scheduleWorker.ts`: added real process-mode polling worker wired to Baileys.
+- `src/cli/waitForConnected.ts`: extracted shared WhatsApp connection wait helper.
+- `src/cli/waSend.ts`: reused the shared connection wait helper.
+- `src/scheduler/WhatsAppMessageSender.ts`: added scheduled-message sender implementation backed by `WhatsAppAdapter.sendText()`.
+- `src/scheduler/SchedulerWorker.ts`: added optional message id/status/timestamp metadata to run results for privacy-safe worker logging.
+- `test/integration/SchedulerWorker.sqlite.test.ts`: updated worker result assertions and covered the new metadata.
+- `test/unit/scheduleArgs.test.ts`: added CLI parser and relative-time tests.
+- `test/unit/WhatsAppMessageSender.test.ts`: added real-sender adapter contract tests with a fake WhatsApp adapter.
+- `README.md`, `docs/project_state.md`, `docs/file_guide.md`, `docs/bug_log.md`, and `docs/implementation_log.md`: updated for Chunk 7.
+
+### Commands Run
+
+- Extracted the Chunk 7 section from `docs/WhatsApp_Send_Later_Codex_Implementation_Plan_HE.docx`.
+- `npm.cmd run typecheck` -> passed.
+- `npm.cmd test` -> passed; 11 test files, 51 tests.
+- `npm.cmd run build` -> passed.
+- Safe temp-database CLI smoke:
+  - `$env:DATABASE_PATH = 'C:\Users\Lenovo\AppData\Local\Temp\timerbot_stage7_smoke.sqlite'; npm.cmd run schedule -- --to +972501234567 --text smoke --in 60s --timezone Asia/Jerusalem` -> passed; created a pending scheduled message.
+  - `$env:DATABASE_PATH = 'C:\Users\Lenovo\AppData\Local\Temp\timerbot_stage7_smoke.sqlite'; npm.cmd run schedule:list` -> passed; listed the row as `pending`.
+  - `$env:DATABASE_PATH = 'C:\Users\Lenovo\AppData\Local\Temp\timerbot_stage7_smoke.sqlite'; npm.cmd run schedule:cancel -- <id>` -> passed; cancelled the row.
+  - `$env:DATABASE_PATH = 'C:\Users\Lenovo\AppData\Local\Temp\timerbot_stage7_smoke.sqlite'; npm.cmd run schedule:list` -> passed; listed the row as `cancelled`.
+
+### Verification
+
+- Typecheck passed.
+- Build passed.
+- Unit and integration tests passed:
+  - existing scheduling CRUD behavior still passes.
+  - existing worker atomic claim/idempotency/retry behavior still passes.
+  - schedule CLI parser accepts absolute `--at` input.
+  - schedule CLI parser resolves relative `--in` input against an IANA timezone.
+  - schedule CLI parser rejects using both `--at` and `--in`.
+  - cancel and worker argument parsing pass.
+  - `WhatsAppMessageSender` sends through `WhatsAppAdapter.sendText()` using the stored normalized phone number and JID.
+  - `WhatsAppMessageSender` preserves adapter failure classification for worker retry handling.
+  - `SchedulerWorker` returns message id/status/timestamp metadata for claimed messages.
+- Safe CLI smoke passed without connecting to WhatsApp or touching the real app database.
+
+### Manual Test
+
+- Not completed yet.
+- User must run the real scheduled send flow with a consenting test recipient and confirm the message arrives exactly once.
+- Suggested manual command sequence:
+  - `npm.cmd run wa:connect`
+  - `npm.cmd run schedule -- --to <country-code-number> --text "scheduled test message" --in 90s --timezone Asia/Jerusalem`
+  - `npm.cmd run schedule:list`
+  - `npm.cmd run schedule:worker -- --poll-ms 1000`
+  - after delivery, stop the worker with Ctrl+C and run `npm.cmd run schedule:list`
+
+### Known Limitations
+
+- Manual live WhatsApp delivery confirmation is still required before Chunk 8.
+- `schedule:worker` is a foreground local process; it is not a service manager or 24/7 deployment.
+- Chunk 8 restart/overdue/cancel edge-case recovery is not implemented yet.
+- Stale `processing` recovery after a process crash is not implemented yet.
+- If the process crashes after provider success but before SQLite records `sent`, true exactly-once delivery still cannot be guaranteed without provider-side idempotency.
+- The temp smoke SQLite file at `C:\Users\Lenovo\AppData\Local\Temp\timerbot_stage7_smoke.sqlite` could not be removed by the tool policy after verification. It is outside the project and contains only fake smoke-test data.

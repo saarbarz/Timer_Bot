@@ -10,6 +10,7 @@ Track open and resolved bugs by chunk or version.
 
 - Chunk 6 does not recover stale `processing` rows after a process crash; this is reserved for Chunk 8.
 - True exactly-once WhatsApp delivery cannot be guaranteed if the provider accepts a message and the process crashes before SQLite records `sent`.
+- Chunk 7 live scheduled delivery still needs manual confirmation; automated tests intentionally do not connect to WhatsApp or send external messages.
 
 ## Resolved Bugs
 

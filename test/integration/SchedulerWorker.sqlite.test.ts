@@ -72,7 +72,7 @@ describe("SchedulerWorker SQLite integration", () => {
 
     expect(results).toEqual(
       expect.arrayContaining([
-        { claimed: 1, sent: 1, sendFailed: 0, retryScheduled: 0, failed: 0 },
+        expect.objectContaining({ claimed: 1, sent: 1, sendFailed: 0, retryScheduled: 0, failed: 0 }),
         emptyRunResult
       ])
     );
@@ -123,12 +123,17 @@ describe("SchedulerWorker SQLite integration", () => {
     const sender = new FakeMessageSender();
     const worker = new SchedulerWorker(context.repository, sender, { clock: context.clock });
 
-    await expect(worker.runOnce()).resolves.toEqual({
+    const result = await worker.runOnce();
+
+    expect(result).toMatchObject({
       claimed: 1,
       sent: 1,
       sendFailed: 0,
       retryScheduled: 0,
-      failed: 0
+      failed: 0,
+      messageId: message.id,
+      finalStatus: "sent",
+      updatedAtUtc: "2026-08-27T09:00:00.000Z"
     });
 
     expect(sender.send).toHaveBeenCalledOnce();
@@ -162,7 +167,7 @@ describe("SchedulerWorker SQLite integration", () => {
     const sender = new FakeMessageSender([{ success: false, errorCode: "transport_error", retryable: true }]);
     const worker = new SchedulerWorker(context.repository, sender, { clock: context.clock });
 
-    await expect(worker.runOnce()).resolves.toEqual({
+    await expect(worker.runOnce()).resolves.toMatchObject({
       claimed: 1,
       sent: 0,
       sendFailed: 1,
@@ -188,7 +193,7 @@ describe("SchedulerWorker SQLite integration", () => {
     const sender = new FakeMessageSender([{ success: false, errorCode: "invalid_recipient", retryable: false }]);
     const worker = new SchedulerWorker(context.repository, sender, { clock: context.clock });
 
-    await expect(worker.runOnce()).resolves.toEqual({
+    await expect(worker.runOnce()).resolves.toMatchObject({
       claimed: 1,
       sent: 0,
       sendFailed: 1,
@@ -211,7 +216,7 @@ describe("SchedulerWorker SQLite integration", () => {
     const sender = new FakeMessageSender([{ success: false, errorCode: "transport_error", retryable: true }]);
     const worker = new SchedulerWorker(context.repository, sender, { clock: context.clock });
 
-    await expect(worker.runOnce()).resolves.toEqual({
+    await expect(worker.runOnce()).resolves.toMatchObject({
       claimed: 1,
       sent: 0,
       sendFailed: 1,
@@ -238,7 +243,7 @@ describe("SchedulerWorker SQLite integration", () => {
 
     await worker.runOnce();
     context.clock.set("2026-08-27T09:00:10.000Z");
-    await expect(worker.runOnce()).resolves.toEqual({
+    await expect(worker.runOnce()).resolves.toMatchObject({
       claimed: 1,
       sent: 1,
       sendFailed: 0,

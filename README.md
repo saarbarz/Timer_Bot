@@ -19,13 +19,18 @@ npm.cmd run build
 npm.cmd run dev
 npm.cmd run wa:connect
 npm.cmd run wa:send -- --to <country-code-number> --text "test message"
+npm.cmd run schedule -- --to <country-code-number> --text "message" --at <YYYY-MM-DDTHH:mm[:ss]> --timezone <IANA timezone>
+npm.cmd run schedule -- --to <country-code-number> --text "message" --in 90s --timezone <IANA timezone>
+npm.cmd run schedule:list
+npm.cmd run schedule:cancel -- <id>
+npm.cmd run schedule:worker
 ```
 
 The npm scripts invoke TypeScript through `node --import tsx` for reliable process exit behavior on this Windows setup.
 
 ## Current Scope
 
-The project has completed Chunk 6: Retry & failure policy. It can reuse the saved WhatsApp linked-device session, send one explicit text message, create/list/update/cancel scheduled messages in SQLite, run a deterministic scheduler worker against a fakeable sender, and apply bounded retry/terminal failure handling for scheduled sends. The real Baileys adapter is not wired to scheduled sends yet. The next allowed chunk is Chunk 7: End-to-end CLI scheduling.
+The project has completed automated implementation for Chunk 7: End-to-end CLI scheduling. It can reuse the saved WhatsApp linked-device session, send one explicit text message, create/list/cancel scheduled messages in SQLite, run a deterministic scheduler worker against a fakeable sender, apply bounded retry/terminal failure handling, and run a process-mode scheduler worker wired to the real Baileys adapter. Manual confirmation of one real scheduled WhatsApp delivery is still required before moving to Chunk 8.
 
 Post-Chunk 5 bug-hunt fixes are also complete: the startup entry point now prints correctly on Windows, `wa:send` validates invalid input before loading or connecting WhatsApp transport, and safe smoke commands have been reverified.
 
@@ -69,3 +74,22 @@ Chunk 5 adds a scheduler worker that atomically claims one due pending message, 
 ## Chunk 6 Retry Status
 
 Chunk 6 adds `next_attempt_at_utc`, retry classification, bounded retry delays of 10s, 30s, 2m, and 5m, and a default max of 4 send attempts. Retryable failures return to `pending` with the next attempt time, terminal failures move to `failed`, and successful sends record the total actual attempt count.
+
+## Chunk 7 Manual Scheduled Send Test
+
+Use a test number or consenting recipient only:
+
+```powershell
+npm.cmd run wa:connect
+npm.cmd run schedule -- --to <country-code-number> --text "scheduled test message" --in 90s --timezone Asia/Jerusalem
+npm.cmd run schedule:list
+npm.cmd run schedule:worker -- --poll-ms 1000
+```
+
+After the due time passes and the worker logs a sent result, stop it with Ctrl+C and run:
+
+```powershell
+npm.cmd run schedule:list
+```
+
+Confirm the row is `status=sent` with `sentAtUtc`. Do not paste real phone numbers, message text, QR payloads, or auth/session files into chat.

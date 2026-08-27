@@ -11,6 +11,12 @@
 
 - `src/index.ts`: minimal application entry point, smoke-testable startup summary, and Windows-safe direct-execution detection.
 - `src/cli/gracefulShutdown.ts`: shared SIGINT/SIGTERM shutdown hook for CLI commands.
+- `src/cli/schedule.ts`: creates scheduled messages from CLI input and stores them in SQLite without connecting to WhatsApp.
+- `src/cli/scheduleArgs.ts`: pure parser and relative-time resolver for schedule/list/cancel/worker CLI arguments.
+- `src/cli/scheduleCancel.ts`: cancels one pending scheduled message by id.
+- `src/cli/scheduleList.ts`: lists scheduled messages with privacy-safe status/timestamp metadata only.
+- `src/cli/scheduleWorker.ts`: process-mode scheduler that connects to WhatsApp and polls SQLite for due messages to send.
+- `src/cli/waitForConnected.ts`: shared helper for waiting until a WhatsApp adapter reports `connected` or `needs_relink`.
 - `src/config/AppConfig.ts`: local configuration for default timezone and generated local paths. It contains no credentials.
 - `src/domain/Clock.ts`: injectable clock abstraction for deterministic scheduling tests.
 - `src/domain/ScheduledMessage.ts`: scheduled message status values and domain shape, including optional `nextAttemptAtUtc` retry timing.
@@ -19,9 +25,10 @@
 - `src/db/Database.ts`: opens the SQLite database, creates the data directory, applies pragmas, and runs migrations.
 - `src/db/Migrations.ts`: migration runner with `schema_migrations`.
 - `src/db/ScheduledMessageRepository.ts`: SQLite repository for scheduled message create/find/list/cancel/update-time operations, atomic due-message claiming, sent marking, retry scheduling, and failed marking.
-- `src/scheduler/MessageSender.ts`: fakeable scheduled-message sender abstraction used by the worker. It is not wired to Baileys yet.
+- `src/scheduler/MessageSender.ts`: fakeable scheduled-message sender abstraction used by the worker.
 - `src/scheduler/RetryPolicy.ts`: retry/failure classification, default send backoff schedule, max-attempt defaults, unknown-failure behavior, and `last_error` sanitization.
 - `src/scheduler/SchedulerWorker.ts`: deterministic single-message worker that claims one due pending message, invokes `MessageSender`, marks successful sends as `sent`, schedules retryable failures, and marks terminal/max-attempt failures as `failed`.
+- `src/scheduler/WhatsAppMessageSender.ts`: adapts stored scheduled messages to the real `WhatsAppAdapter.sendText()` transport API.
 - `src/db/migrations/001_create_scheduled_messages.ts`: creates `scheduled_messages` and its due-message index.
 - `src/db/migrations/002_add_next_attempt_at.ts`: adds `next_attempt_at_utc` and updates the due-message index for retry scheduling.
 - `src/cli/waConnect.ts`: manual CLI for opening a Baileys WhatsApp connection and showing the linked-device QR.
@@ -44,6 +51,8 @@
 - `test/unit/ConnectionManager.test.ts`: fake-timer tests for bounded reconnect backoff, no reconnect on relink-required closes, and shutdown timer cancellation.
 - `test/unit/RecipientNormalizer.test.ts`: Chunk 2 tests for phone-number normalization and group rejection.
 - `test/unit/SendTextNow.test.ts`: Chunk 2 tests for validation without an adapter, empty text rejection, exactly-one adapter call on success, and transport exception mapping.
+- `test/unit/scheduleArgs.test.ts`: Chunk 7 tests for schedule/create/cancel/worker CLI argument parsing and `--in` relative time resolution.
+- `test/unit/WhatsAppMessageSender.test.ts`: Chunk 7 tests for adapting scheduled messages to the WhatsApp adapter and preserving failure classification.
 
 ## Documentation
 

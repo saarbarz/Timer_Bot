@@ -3,8 +3,8 @@ import {
   sendTextNow,
   validateSendTextNowRequest
 } from "../whatsapp/SendTextNow.js";
-import type { WhatsAppAdapter } from "../whatsapp/WhatsAppAdapter.js";
 import { installGracefulShutdown } from "./gracefulShutdown.js";
+import { waitForConnected } from "./waitForConnected.js";
 
 interface SendCliArgs {
   readonly to: string;
@@ -80,28 +80,4 @@ function parseArgs(argv: readonly string[]): SendCliArgs | undefined {
   }
 
   return { to, text };
-}
-
-async function waitForConnected(
-  adapter: Pick<WhatsAppAdapter, "getStatus">,
-  timeoutMs = 60_000,
-  pollMs = 250
-): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-
-  while (Date.now() < deadline) {
-    const status = adapter.getStatus();
-
-    if (status === "connected") {
-      return;
-    }
-
-    if (status === "needs_relink") {
-      throw new Error("WhatsApp session is logged out. Run npm.cmd run wa:connect to relink.");
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, pollMs));
-  }
-
-  throw new Error("Timed out waiting for WhatsApp connection.");
 }

@@ -2,9 +2,9 @@
 
 ## Current Position
 
-- Current chunk: Chunk 6 - Retry & failure policy is complete.
-- Last completed chunk: Chunk 6 - Retry & failure policy.
-- Next allowed chunk: Chunk 7 - End-to-end CLI scheduling.
+- Current chunk: Chunk 7 - End-to-end CLI scheduling automated implementation is complete; manual real scheduled-delivery verification is pending.
+- Last completed chunk: Chunk 7 automated implementation and safe local verification.
+- Next allowed chunk: Chunk 8 - Restart / overdue / cancel edge cases, after the user confirms one real scheduled WhatsApp delivery.
 - WhatsApp code status: Baileys connection adapter exists, manual QR/device linking was confirmed, one-shot text sending behind `WhatsAppAdapter` was confirmed by real manual send tests, and reconnect lifecycle lives in `ConnectionManager`.
 
 ## Environment
@@ -50,6 +50,11 @@
 - Default send retry delays are 10s, 30s, 2m, and 5m, with max attempts set to 4.
 - Unknown failures default to terminal/no retry unless `retryUnknownFailures` is enabled for the worker.
 - Chunk 6 intentionally does not wire the worker to the real Baileys adapter.
+- Chunk 7 adds CLI scripts for scheduling, listing, cancelling, and running the real polling worker.
+- `schedule` supports `--at <YYYY-MM-DDTHH:mm[:ss]>` and `--in <duration>` for short manual tests such as `--in 90s`.
+- `schedule:list` prints message id/status/timestamps/retry metadata only; it does not print recipient numbers or message text.
+- `schedule:worker` connects to WhatsApp, waits for `connected`, then polls SQLite and sends due messages through `WhatsAppMessageSender`.
+- Scheduled real sends now pass through `WhatsAppMessageSender`, which adapts stored normalized recipient data to the existing `WhatsAppAdapter.sendText()` API.
 - `src/index.ts` uses `pathToFileURL` for direct-execution detection so startup smoke output works with Windows paths.
 
 ## Resume Instructions
@@ -63,10 +68,13 @@
 7. Chunk 4 SQLite scheduling CRUD is complete and verified by integration tests.
 8. Chunk 5 worker atomic claim/idempotency is complete and verified by SQLite integration tests.
 9. Post-Chunk 5 bug hunt is complete. Startup smoke commands and safe invalid `wa:send` validation paths were reverified.
-10. Chunk 6 retry/failure policy is complete and verified by SQLite integration tests. Implement only Chunk 7 next.
+10. Chunk 6 retry/failure policy is complete and verified by SQLite integration tests.
+11. Chunk 7 automated implementation is complete and verified by tests/build/safe CLI smoke. Before implementing Chunk 8, get user confirmation that one scheduled WhatsApp message was actually delivered once.
 
 ## Important Caveat
 
 The scheduler can prevent normal duplicate sends in its own database logic, but true exactly-once WhatsApp delivery cannot be guaranteed. A crash or hard interruption after WhatsApp accepts a message but before SQLite records `sent` can leave the app unable to know whether the provider already delivered it.
 
 Chunk 6 deliberately treats unknown send failures as terminal by default. This favors avoiding possible duplicate sends over retrying an ambiguous result. The behavior is configurable for fake/test senders or future carefully classified provider errors.
+
+Chunk 7 still requires a manual E2E confirmation because automated tests do not connect to live WhatsApp or send real external messages.
