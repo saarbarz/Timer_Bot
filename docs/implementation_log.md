@@ -221,7 +221,7 @@ Status: completed
 
 ## Chunk 3 - Persistent Session & Reconnect
 
-Status: automated implementation complete; manual restart/send verification pending
+Status: completed
 
 ### Scope
 
@@ -278,14 +278,9 @@ Status: automated implementation complete; manual restart/send verification pend
 
 ### Manual Restart Test
 
-- Pending user verification.
-- Required steps:
-  1. Run `npm.cmd run wa:connect`.
-  2. Confirm it reaches `WhatsApp connection is open.` without displaying a new QR.
-  3. Stop the process with Ctrl+C.
-  4. Run one send-now test again with a test number or consenting recipient:
-     `npm.cmd run wa:send -- --to <country-code-number> --text "test message"`
-  5. Confirm the message appears once on both sender and receiver sides.
+- Completed on 2026-08-27.
+- User provided a screenshot showing `npm.cmd run wa:connect` reached `WhatsApp connection is open.` without a new QR.
+- User then confirmed `Message sent successfully` after running a send-now test.
 - Do not paste real phone numbers, message contents, QR payloads, auth files, or account details into chat.
 
 ### Known Limitations
@@ -293,4 +288,76 @@ Status: automated implementation complete; manual restart/send verification pend
 - Chunk 3 does not add the scheduler or send retry policy.
 - Reconnect backoff is for WhatsApp socket lifecycle only; message retry behavior is still a later chunk.
 - True exactly-once WhatsApp delivery still cannot be guaranteed without provider-side idempotency.
-- Chunk 4 must not start until the manual restart/no-new-QR/send test is confirmed.
+
+## Chunk 4 - Scheduling Domain + SQLite
+
+Status: completed
+
+### Scope
+
+- Add SQLite persistence for scheduled messages.
+- Add numbered DB migrations.
+- Add `ScheduleService.create`, `ScheduleService.list`, `ScheduleService.cancel`, and `ScheduleService.updateTime`.
+- Store canonical timestamps in UTC ISO strings.
+- Convert local datetime input to UTC immediately using the supplied timezone.
+- Enforce allowed states: `pending`, `processing`, `sent`, `failed`, `cancelled`.
+- Allow cancel/update only for `pending` messages.
+- Do not connect scheduling to WhatsApp, run a worker, add retries, add CLI scheduling commands, or add UI.
+
+### Package Versions
+
+- Installed `better-sqlite3@13.0.3`.
+- Installed `@types/better-sqlite3@9.6.0`.
+
+### Files Changed
+
+- `package.json`: added SQLite dependencies.
+- `package-lock.json`: updated dependency lockfile.
+- `src/config/AppConfig.ts`: added `databasePath`, defaulting to `data/timer-bot.sqlite`.
+- `src/domain/Clock.ts`: added injectable clock.
+- `src/domain/ScheduledMessage.ts`: added scheduled message states and domain interface.
+- `src/domain/Timezone.ts`: added IANA timezone local-datetime to UTC conversion.
+- `src/domain/ScheduleService.ts`: added scheduling validation and CRUD service.
+- `src/db/Database.ts`: added SQLite open helper and migration startup.
+- `src/db/Migrations.ts`: added migration runner.
+- `src/db/migrations/001_create_scheduled_messages.ts`: added `scheduled_messages` table and due-message index.
+- `src/db/ScheduledMessageRepository.ts`: added SQLite repository.
+- `test/integration/ScheduleService.sqlite.test.ts`: added integration coverage against temporary SQLite databases.
+- `README.md`, `docs/project_state.md`, `docs/file_guide.md`, and `docs/implementation_log.md`: updated for Chunk 4.
+
+### Commands Run
+
+- `npm.cmd install better-sqlite3` -> passed; 0 vulnerabilities. npm warned that install scripts need allow-scripts review.
+- `npm.cmd install -D @types/better-sqlite3` -> passed; 0 vulnerabilities. npm warned about install scripts for Baileys/protobuf/esbuild/better-sqlite3.
+- `npm.cmd list better-sqlite3 @types/better-sqlite3 --depth=0` -> confirmed versions above.
+- `npm.cmd run typecheck` -> failed once because `ScheduleService` tried to pass the recipient normalizer's wider `SendErrorCode` union directly into `ScheduleError`.
+- `npm.cmd run typecheck` -> passed after narrowing recipient validation errors.
+- `npm.cmd test` -> passed; 8 test files, 30 tests.
+- `npm.cmd run build` -> passed.
+
+### Verification
+
+- Typecheck passed.
+- Build passed.
+- Unit and integration tests passed:
+  - migration runs on an empty SQLite database.
+  - reopened SQLite database preserves created scheduled messages.
+  - create future message produces `pending` with `attempts=0`.
+  - past scheduled time is rejected before writing.
+  - cancel pending transitions to `cancelled`.
+  - cancel sent/processing is rejected.
+  - update pending time works and stores UTC.
+  - winter `Asia/Jerusalem` timezone offset converts correctly.
+  - update sent is rejected.
+- No WhatsApp connection is used by Chunk 4 tests.
+
+### Manual Test
+
+- Not required for Chunk 4.
+
+### Known Limitations
+
+- No scheduler worker exists yet.
+- No atomic claim or idempotency behavior exists yet.
+- No send retry policy exists yet.
+- No CLI commands exist yet for creating scheduled messages; this chunk validates the service and database layer only.

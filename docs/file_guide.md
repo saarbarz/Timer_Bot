@@ -12,6 +12,14 @@
 - `src/index.ts`: minimal application entry point and smoke-testable startup summary.
 - `src/cli/gracefulShutdown.ts`: shared SIGINT/SIGTERM shutdown hook for CLI commands.
 - `src/config/AppConfig.ts`: local configuration for default timezone and generated local paths. It contains no credentials.
+- `src/domain/Clock.ts`: injectable clock abstraction for deterministic scheduling tests.
+- `src/domain/ScheduledMessage.ts`: scheduled message status values and domain shape.
+- `src/domain/ScheduleService.ts`: scheduling CRUD service that validates recipient/text/time, converts local time to UTC, creates pending messages, lists messages, updates pending times, and cancels pending messages.
+- `src/domain/Timezone.ts`: IANA timezone conversion helper for local datetime input to UTC.
+- `src/db/Database.ts`: opens the SQLite database, creates the data directory, applies pragmas, and runs migrations.
+- `src/db/Migrations.ts`: migration runner with `schema_migrations`.
+- `src/db/ScheduledMessageRepository.ts`: SQLite repository for scheduled message create/find/list/cancel/update-time operations.
+- `src/db/migrations/001_create_scheduled_messages.ts`: creates `scheduled_messages` and its due-message index.
 - `src/cli/waConnect.ts`: manual CLI for opening a Baileys WhatsApp connection and showing the linked-device QR.
 - `src/cli/waSend.ts`: manual one-shot CLI for connecting to WhatsApp and sending one text message to an explicit phone-number recipient.
 - `src/whatsapp/WhatsAppAdapter.ts`: transport interface and internal send result types that future scheduler code must depend on instead of Baileys directly.
@@ -24,6 +32,7 @@
 ## Tests
 
 - `test/unit/config.test.ts`: Chunk 0 smoke tests for config and startup wiring.
+- `test/integration/ScheduleService.sqlite.test.ts`: Chunk 4 integration tests against temporary SQLite databases for migrations, create/list/update/cancel rules, persistence after reopen, and timezone conversion.
 - `test/unit/BaileysConnectionState.test.ts`: Chunk 1 connection status transition tests.
 - `test/unit/BaileysReconnect.test.ts`: reconnect decision tests, including relink-required Baileys close codes.
 - `test/unit/BaileysEventHandlers.test.ts`: tests for event handler registration, credential save callback wiring, QR forwarding, and credential-save error reporting.

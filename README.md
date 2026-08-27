@@ -23,7 +23,7 @@ npm.cmd run wa:send -- --to <country-code-number> --text "test message"
 
 ## Current Scope
 
-The project has automated implementation for Chunk 3: Persistent session & reconnect. It can reuse the saved WhatsApp linked-device session, manages reconnect lifecycle through a `ConnectionManager`, and sends one explicit text message. Chunk 3 still needs the manual restart/no-new-QR/send test before Chunk 4 is allowed.
+The project has completed Chunk 4: Scheduling domain + SQLite. It can reuse the saved WhatsApp linked-device session, send one explicit text message, and create/list/update/cancel scheduled messages in SQLite without wiring the scheduler to WhatsApp yet. The next allowed chunk is Chunk 5: Worker + atomic claim + idempotency.
 
 ## WhatsApp QR Link Test
 
@@ -57,3 +57,7 @@ npm.cmd run wa:send -- --to <country-code-number> --text "test message"
 ```
 
 Use only a test number or consenting recipient. Do not paste real phone numbers or message text into chat.
+
+## Chunk 4 Scheduling Status
+
+Chunk 4 adds SQLite persistence and scheduling CRUD through `ScheduleService`. It does not start a worker or send scheduled messages yet.
