@@ -1,15 +1,24 @@
 import { normalizeRecipient } from "./RecipientNormalizer.js";
-import type { SendResult, WhatsAppAdapter } from "./WhatsAppAdapter.js";
+import type { NormalizedRecipient, SendResult, WhatsAppAdapter } from "./WhatsAppAdapter.js";
 
 export interface SendTextNowRequest {
   readonly to: string;
   readonly text: string;
 }
 
-export async function sendTextNow(
-  adapter: Pick<WhatsAppAdapter, "sendText">,
-  request: SendTextNowRequest
-): Promise<SendResult> {
+interface ValidSendTextNowRequest {
+  readonly success: true;
+  readonly recipient: NormalizedRecipient;
+  readonly text: string;
+}
+
+export type SendTextNowValidationResult = ValidSendTextNowRequest | SendResult;
+
+export function isValidSendTextNowRequest(result: SendTextNowValidationResult): result is ValidSendTextNowRequest {
+  return result.success && "recipient" in result;
+}
+
+export function validateSendTextNowRequest(request: SendTextNowRequest): SendTextNowValidationResult {
   const normalized = normalizeRecipient(request.to);
   if (!normalized.success) {
     return {
@@ -27,8 +36,24 @@ export async function sendTextNow(
     };
   }
 
+  return {
+    success: true,
+    recipient: normalized.recipient,
+    text: request.text
+  };
+}
+
+export async function sendTextNow(
+  adapter: Pick<WhatsAppAdapter, "sendText">,
+  request: SendTextNowRequest
+): Promise<SendResult> {
+  const validation = validateSendTextNowRequest(request);
+  if (!isValidSendTextNowRequest(validation)) {
+    return validation;
+  }
+
   try {
-    return await adapter.sendText(normalized.recipient, request.text);
+    return await adapter.sendText(validation.recipient, validation.text);
   } catch {
     return {
       success: false,

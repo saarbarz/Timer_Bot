@@ -13,6 +13,7 @@ export interface ScheduledMessage {
   readonly attempts: number;
   readonly createdAtUtc: string;
   readonly updatedAtUtc: string;
+  readonly nextAttemptAtUtc?: string;
   readonly sentAtUtc?: string;
   readonly lastError?: string;
   readonly providerMessageId?: string;

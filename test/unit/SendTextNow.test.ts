@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { sendTextNow } from "../../src/whatsapp/SendTextNow.js";
+import { sendTextNow, validateSendTextNowRequest } from "../../src/whatsapp/SendTextNow.js";
 import type { NormalizedRecipient, SendResult, WhatsAppAdapter } from "../../src/whatsapp/WhatsAppAdapter.js";
 
 describe("sendTextNow", () => {
@@ -14,6 +14,14 @@ describe("sendTextNow", () => {
     });
 
     expect(adapter.sendText).not.toHaveBeenCalled();
+  });
+
+  it("validates invalid recipients without requiring an adapter", () => {
+    expect(validateSendTextNowRequest({ to: "not-a-number", text: "test message" })).toEqual({
+      success: false,
+      errorCode: "invalid_recipient",
+      retryable: false
+    });
   });
 
   it("calls the adapter exactly once for a valid text message", async () => {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { appConfig } from "../../src/config/AppConfig.js";
-import { getStartupSummary } from "../../src/index.js";
+import { getStartupSummary, isDirectExecution } from "../../src/index.js";
 
 describe("Chunk 0 project skeleton", () => {
   it("uses Asia/Jerusalem as the default timezone", () => {
@@ -10,5 +10,14 @@ describe("Chunk 0 project skeleton", () => {
 
   it("has a startup summary smoke test", () => {
     expect(getStartupSummary()).toContain("Timer Bot initialized");
+  });
+
+  it("detects direct execution from a Windows argv path", () => {
+    expect(
+      isDirectExecution(
+        "file:///C:/Users/Lenovo/IdeaProjects/Timer_Bot/dist/src/index.js",
+        "C:\\Users\\Lenovo\\IdeaProjects\\Timer_Bot\\dist\\src\\index.js"
+      )
+    ).toBe(true);
   });
 });

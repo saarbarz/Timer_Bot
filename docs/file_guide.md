@@ -9,36 +9,41 @@
 
 ## Source
 
-- `src/index.ts`: minimal application entry point and smoke-testable startup summary.
+- `src/index.ts`: minimal application entry point, smoke-testable startup summary, and Windows-safe direct-execution detection.
 - `src/cli/gracefulShutdown.ts`: shared SIGINT/SIGTERM shutdown hook for CLI commands.
 - `src/config/AppConfig.ts`: local configuration for default timezone and generated local paths. It contains no credentials.
 - `src/domain/Clock.ts`: injectable clock abstraction for deterministic scheduling tests.
-- `src/domain/ScheduledMessage.ts`: scheduled message status values and domain shape.
+- `src/domain/ScheduledMessage.ts`: scheduled message status values and domain shape, including optional `nextAttemptAtUtc` retry timing.
 - `src/domain/ScheduleService.ts`: scheduling CRUD service that validates recipient/text/time, converts local time to UTC, creates pending messages, lists messages, updates pending times, and cancels pending messages.
 - `src/domain/Timezone.ts`: IANA timezone conversion helper for local datetime input to UTC.
 - `src/db/Database.ts`: opens the SQLite database, creates the data directory, applies pragmas, and runs migrations.
 - `src/db/Migrations.ts`: migration runner with `schema_migrations`.
-- `src/db/ScheduledMessageRepository.ts`: SQLite repository for scheduled message create/find/list/cancel/update-time operations.
+- `src/db/ScheduledMessageRepository.ts`: SQLite repository for scheduled message create/find/list/cancel/update-time operations, atomic due-message claiming, sent marking, retry scheduling, and failed marking.
+- `src/scheduler/MessageSender.ts`: fakeable scheduled-message sender abstraction used by the worker. It is not wired to Baileys yet.
+- `src/scheduler/RetryPolicy.ts`: retry/failure classification, default send backoff schedule, max-attempt defaults, unknown-failure behavior, and `last_error` sanitization.
+- `src/scheduler/SchedulerWorker.ts`: deterministic single-message worker that claims one due pending message, invokes `MessageSender`, marks successful sends as `sent`, schedules retryable failures, and marks terminal/max-attempt failures as `failed`.
 - `src/db/migrations/001_create_scheduled_messages.ts`: creates `scheduled_messages` and its due-message index.
+- `src/db/migrations/002_add_next_attempt_at.ts`: adds `next_attempt_at_utc` and updates the due-message index for retry scheduling.
 - `src/cli/waConnect.ts`: manual CLI for opening a Baileys WhatsApp connection and showing the linked-device QR.
-- `src/cli/waSend.ts`: manual one-shot CLI for connecting to WhatsApp and sending one text message to an explicit phone-number recipient.
+- `src/cli/waSend.ts`: manual one-shot CLI for validating a send request, lazy-loading the Baileys adapter only after validation passes, connecting to WhatsApp, and sending one text message to an explicit phone-number recipient.
 - `src/whatsapp/WhatsAppAdapter.ts`: transport interface and internal send result types that future scheduler code must depend on instead of Baileys directly.
 - `src/whatsapp/BaileysConnectionState.ts`: pure mapping from Baileys connection updates to internal connection statuses.
 - `src/whatsapp/ConnectionManager.ts`: centralized lifecycle manager for connection status, bounded reconnect backoff, timer cancellation, and shutdown.
 - `src/whatsapp/BaileysWhatsAppAdapter.ts`: Baileys-backed adapter that opens/closes sockets, registers connection and credential events, persists auth under `auth/`, renders QR codes, sends individual text messages, and reports credential-save failures through structured logs.
 - `src/whatsapp/RecipientNormalizer.ts`: pure recipient normalization and validation for phone-number based individual WhatsApp recipients.
-- `src/whatsapp/SendTextNow.ts`: validation-first send-now service that converts validation and transport failures into `SendResult`.
+- `src/whatsapp/SendTextNow.ts`: validation-first send-now service and reusable request validator that convert validation and transport failures into `SendResult`.
 
 ## Tests
 
-- `test/unit/config.test.ts`: Chunk 0 smoke tests for config and startup wiring.
+- `test/unit/config.test.ts`: Chunk 0 smoke tests for config/startup wiring and the Windows direct-execution regression.
 - `test/integration/ScheduleService.sqlite.test.ts`: Chunk 4 integration tests against temporary SQLite databases for migrations, create/list/update/cancel rules, persistence after reopen, and timezone conversion.
+- `test/integration/SchedulerWorker.sqlite.test.ts`: Chunk 5 and Chunk 6 integration tests for due-message claiming, future/cancelled exclusion, successful sent marking, no duplicate sends, retry backoff, terminal failure, max attempts, recovery after retry, retry metadata cleanup, and migrating an existing Chunk 4 database.
 - `test/unit/BaileysConnectionState.test.ts`: Chunk 1 connection status transition tests.
 - `test/unit/BaileysReconnect.test.ts`: reconnect decision tests, including relink-required Baileys close codes.
 - `test/unit/BaileysEventHandlers.test.ts`: tests for event handler registration, credential save callback wiring, QR forwarding, and credential-save error reporting.
 - `test/unit/ConnectionManager.test.ts`: fake-timer tests for bounded reconnect backoff, no reconnect on relink-required closes, and shutdown timer cancellation.
 - `test/unit/RecipientNormalizer.test.ts`: Chunk 2 tests for phone-number normalization and group rejection.
-- `test/unit/SendTextNow.test.ts`: Chunk 2 tests for empty text rejection, exactly-one adapter call on success, and transport exception mapping.
+- `test/unit/SendTextNow.test.ts`: Chunk 2 tests for validation without an adapter, empty text rejection, exactly-one adapter call on success, and transport exception mapping.
 
 ## Documentation
 

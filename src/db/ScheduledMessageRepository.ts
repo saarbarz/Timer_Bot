@@ -13,6 +13,7 @@ interface ScheduledMessageRow {
   readonly attempts: number;
   readonly created_at_utc: string;
   readonly updated_at_utc: string;
+  readonly next_attempt_at_utc: string | null;
   readonly sent_at_utc: string | null;
   readonly last_error: string | null;
   readonly provider_message_id: string | null;
@@ -105,12 +106,123 @@ export class ScheduledMessageRepository {
       .map(mapScheduledMessage);
   }
 
+  claimNextDuePending(nowUtc: string): ScheduledMessage | undefined {
+    const claim = this.db.transaction((claimedAtUtc: string) => {
+      const due = this.db
+        .prepare<[string, string], { id: string }>(
+          `
+            SELECT id
+            FROM scheduled_messages
+            WHERE
+              status = 'pending'
+              AND scheduled_at_utc <= ?
+              AND (next_attempt_at_utc IS NULL OR next_attempt_at_utc <= ?)
+            ORDER BY scheduled_at_utc ASC, created_at_utc ASC
+            LIMIT 1
+          `
+        )
+        .get(claimedAtUtc, claimedAtUtc);
+
+      if (due === undefined) {
+        return undefined;
+      }
+
+      const result = this.db
+        .prepare<[string, string]>(
+          `
+            UPDATE scheduled_messages
+            SET status = 'processing', updated_at_utc = ?
+            WHERE id = ? AND status = 'pending'
+          `
+        )
+        .run(claimedAtUtc, due.id);
+
+      return result.changes === 0 ? undefined : due.id;
+    });
+
+    const claimedId = claim(nowUtc) as string | undefined;
+    return claimedId === undefined ? undefined : this.findById(claimedId);
+  }
+
+  markProcessingSent(
+    id: string,
+    sentAtUtc: string,
+    providerMessageId: string | undefined,
+    updatedAtUtc: string
+  ): ScheduledMessage | undefined {
+    const result = this.db
+      .prepare<[string, string | null, string, string]>(
+        `
+          UPDATE scheduled_messages
+          SET
+            status = 'sent',
+            attempts = attempts + 1,
+            sent_at_utc = ?,
+            provider_message_id = ?,
+            updated_at_utc = ?,
+            next_attempt_at_utc = NULL,
+            last_error = NULL
+          WHERE id = ? AND status = 'processing'
+        `
+      )
+      .run(sentAtUtc, providerMessageId ?? null, updatedAtUtc, id);
+
+    return result.changes === 0 ? undefined : this.findById(id);
+  }
+
+  markProcessingRetryable(
+    id: string,
+    nextAttemptAtUtc: string,
+    lastError: string,
+    updatedAtUtc: string
+  ): ScheduledMessage | undefined {
+    const result = this.db
+      .prepare<[string, string, string, string]>(
+        `
+          UPDATE scheduled_messages
+          SET
+            status = 'pending',
+            attempts = attempts + 1,
+            next_attempt_at_utc = ?,
+            last_error = ?,
+            updated_at_utc = ?
+          WHERE id = ? AND status = 'processing'
+        `
+      )
+      .run(nextAttemptAtUtc, lastError, updatedAtUtc, id);
+
+    return result.changes === 0 ? undefined : this.findById(id);
+  }
+
+  markProcessingFailed(
+    id: string,
+    lastError: string,
+    updatedAtUtc: string
+  ): ScheduledMessage | undefined {
+    const result = this.db
+      .prepare<[string, string, string]>(
+        `
+          UPDATE scheduled_messages
+          SET
+            status = 'failed',
+            attempts = attempts + 1,
+            next_attempt_at_utc = NULL,
+            last_error = ?,
+            updated_at_utc = ?
+          WHERE id = ? AND status = 'processing'
+        `
+      )
+      .run(lastError, updatedAtUtc, id);
+
+    return result.changes === 0 ? undefined : this.findById(id);
+  }
+
   cancelPending(id: string, updatedAtUtc: string): ScheduledMessage | undefined {
     const result = this.db
       .prepare<[string, string]>(
         `
           UPDATE scheduled_messages
-          SET status = 'cancelled', updated_at_utc = ?
+          SET status = 'cancelled', updated_at_utc = ?, next_attempt_at_utc = NULL
           WHERE id = ? AND status = 'pending'
         `
       )
@@ -129,7 +241,12 @@ export class ScheduledMessageRepository {
       .prepare<[string, string, string, string]>(
         `
           UPDATE scheduled_messages
-          SET scheduled_at_utc = ?, timezone = ?, updated_at_utc = ?
+          SET
+            scheduled_at_utc = ?,
+            timezone = ?,
+            updated_at_utc = ?,
+            next_attempt_at_utc = NULL,
+            last_error = NULL
           WHERE id = ? AND status = 'pending'
         `
       )
@@ -151,6 +268,7 @@ function mapScheduledMessage(row: ScheduledMessageRow): ScheduledMessage {
     attempts: row.attempts,
     createdAtUtc: row.created_at_utc,
     updatedAtUtc: row.updated_at_utc,
+    nextAttemptAtUtc: row.next_attempt_at_utc ?? undefined,
     sentAtUtc: row.sent_at_utc ?? undefined,
     lastError: row.last_error ?? undefined,
     providerMessageId: row.provider_message_id ?? undefined

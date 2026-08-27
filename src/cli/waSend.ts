@@ -1,5 +1,8 @@
-import { BaileysWhatsAppAdapter } from "../whatsapp/BaileysWhatsAppAdapter.js";
-import { sendTextNow } from "../whatsapp/SendTextNow.js";
+import {
+  isValidSendTextNowRequest,
+  sendTextNow,
+  validateSendTextNowRequest
+} from "../whatsapp/SendTextNow.js";
 import type { WhatsAppAdapter } from "../whatsapp/WhatsAppAdapter.js";
 import { installGracefulShutdown } from "./gracefulShutdown.js";
 
@@ -20,6 +23,14 @@ await main(args).catch((error: unknown) => {
 });
 
 async function main(sendArgs: SendCliArgs): Promise<void> {
+  const validation = validateSendTextNowRequest(sendArgs);
+  if (!isValidSendTextNowRequest(validation)) {
+    console.error(`Message was not sent. errorCode=${validation.errorCode}, retryable=${validation.retryable === true}`);
+    process.exitCode = 1;
+    return;
+  }
+
+  const { BaileysWhatsAppAdapter } = await import("../whatsapp/BaileysWhatsAppAdapter.js");
   const adapter = new BaileysWhatsAppAdapter();
 
   installGracefulShutdown(adapter);

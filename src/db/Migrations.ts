@@ -1,8 +1,9 @@
 import type Database from "better-sqlite3";
 
 import { createScheduledMessagesMigration } from "./migrations/001_create_scheduled_messages.js";
+import { addNextAttemptAtMigration } from "./migrations/002_add_next_attempt_at.js";
 
-const migrations = [createScheduledMessagesMigration] as const;
+const migrations = [createScheduledMessagesMigration, addNextAttemptAtMigration] as const;
 
 export function runMigrations(db: Database.Database): void {
   db.exec(`

@@ -2,6 +2,8 @@
 
 This file is updated at the end of every chunk so a future session can resume from repository facts instead of chat history.
 
+Older chunk sections describe the state and verification results at the time that chunk was completed. Later sections may supersede earlier implementation details, such as `logged_out` being replaced by `needs_relink` in Chunk 3 and test counts increasing after later work.
+
 ## Chunk 0 - Project Skeleton & Safety
 
 Status: completed
@@ -361,3 +363,194 @@ Status: completed
 - No atomic claim or idempotency behavior exists yet.
 - No send retry policy exists yet.
 - No CLI commands exist yet for creating scheduled messages; this chunk validates the service and database layer only.
+
+## Chunk 5 - Worker + Atomic Claim + Idempotency
+
+Status: completed
+
+### Scope
+
+- Add a scheduler worker that finds due `pending` scheduled messages.
+- Claim at most one message per run for the Single-User PoC.
+- Make claiming atomic in SQLite: due `pending` row selection and `pending` to `processing` transition happen inside one transaction.
+- Add a fakeable `MessageSender` abstraction so worker tests do not use Baileys.
+- Do not mark a message `sent` until the sender reports success.
+- After success, store `provider_message_id`, `sent_at_utc`, and `status='sent'`.
+- Do not wire the real Baileys adapter to scheduled sends yet.
+- Do not implement retry/failure policy yet.
+
+### Files Changed
+
+- `src/db/ScheduledMessageRepository.ts`: added `claimNextDuePending` and `markProcessingSent`.
+- `src/scheduler/MessageSender.ts`: added scheduled-message sender abstraction and result shape.
+- `src/scheduler/SchedulerWorker.ts`: added deterministic one-message worker using the repository, clock, and sender abstractions.
+- `test/integration/SchedulerWorker.sqlite.test.ts`: added SQLite integration tests for atomic claim and idempotency behavior.
+- `README.md`: updated current scope and Chunk 5 status.
+- `docs/project_state.md`: updated current/next chunk and architecture decisions.
+- `docs/file_guide.md`: documented new scheduler files and tests.
+- `docs/implementation_log.md`: added this Chunk 5 log.
+
+### Commands Run
+
+- Extracted the Chunk 5 section from `docs/WhatsApp_Send_Later_Codex_Implementation_Plan_HE.docx`.
+- `npm.cmd run typecheck` -> passed.
+- `npm.cmd test` -> passed; 9 test files, 35 tests.
+- `npm.cmd run build` -> passed.
+
+### Verification
+
+- Typecheck passed.
+- Build passed.
+- Unit and integration tests passed:
+  - two concurrent workers targeting the same due message result in exactly one send.
+  - a future message is not claimed.
+  - a cancelled message is not claimed.
+  - a successful send is marked `sent` once with `sent_at_utc` and `provider_message_id`.
+  - a later worker run does not resend an already sent message.
+- No real WhatsApp connection is used by Chunk 5 tests.
+
+### Manual Test
+
+- Not required for Chunk 5.
+
+### Known Limitations
+
+- The worker is not wired to the real Baileys adapter yet; that is reserved for Chunk 7.
+- Retry and failure handling are not implemented yet; that is reserved for Chunk 6.
+- If the sender fails or throws in Chunk 5, the worker reports `sendFailed=1` and leaves the claimed row in `processing`. Stale-processing recovery is reserved for later chunks.
+- True exactly-once WhatsApp delivery still cannot be guaranteed without provider-side idempotency, especially if the process crashes after provider success but before SQLite is marked `sent`.
+
+These limitations describe Chunk 5 as completed. Chunk 6 later added retry and failure handling for normal sender failures; stale `processing` recovery after crashes remains a later concern.
+
+## Post-Chunk 5 Bug Hunt & Flow Verification
+
+Status: completed
+
+### Scope
+
+- Re-run all automated checks through Chunk 5.
+- Exercise safe smoke commands that do not connect to WhatsApp or send real messages.
+- Stress-check the Chunk 5 worker with separate SQLite connections against the same database file.
+- Reproduce and fix any defects found in the local flow.
+- Do not run real WhatsApp QR/connect/send commands without a manual test gate.
+
+### Bugs Found and Fixed
+
+- `npm.cmd run dev` and `node dist/src/index.js` printed no startup summary on Windows.
+  - Root cause: `src/index.ts` compared `import.meta.url` to a manually concatenated `file://${process.argv[1]}` string, which does not normalize Windows paths.
+  - Fix: use `pathToFileURL(process.argv[1]).href` through `isDirectExecution`.
+  - Regression coverage: `test/unit/config.test.ts`.
+- npm/npx invocations through the `tsx` Windows executable path hung in this environment.
+  - Root cause: the executable/shim path behaved differently than direct Node loader invocation.
+  - Fix: `package.json` scripts now use `node --import tsx ...`.
+- `wa:send` validation happened after WhatsApp transport setup.
+  - Root cause: CLI ordering called adapter creation/connect before `sendTextNow` validation.
+  - Fix: add `validateSendTextNowRequest()` and call it before adapter creation.
+  - Regression coverage: `test/unit/SendTextNow.test.ts`.
+- Invalid `wa:send` input still stayed alive after early validation was added.
+  - Root cause: `waSend.ts` statically imported `BaileysWhatsAppAdapter`, so the transport module graph loaded before validation.
+  - Fix: lazy-import `BaileysWhatsAppAdapter` only after validation succeeds.
+
+### Files Changed
+
+- `package.json`: changed `dev`, `wa:connect`, and `wa:send` scripts to `node --import tsx ...`.
+- `src/index.ts`: added `pathToFileURL`-based direct-execution detection.
+- `src/cli/waSend.ts`: validates send input before lazy-loading the Baileys adapter.
+- `src/whatsapp/SendTextNow.ts`: exports reusable request validation and a validation type guard.
+- `test/unit/config.test.ts`: added Windows direct-execution regression coverage.
+- `test/unit/SendTextNow.test.ts`: added validation-without-adapter coverage.
+- `docs/bug_log.md`: recorded the reproduced root causes and fixes.
+- `README.md`, `docs/project_state.md`, `docs/file_guide.md`, and `docs/implementation_log.md`: updated to reflect current flow.
+
+### Commands Run
+
+- `npm.cmd run typecheck` -> passed.
+- `npm.cmd test` -> passed; 9 test files, 37 tests.
+- `npm.cmd run build` -> passed.
+- `npm.cmd audit --audit-level=moderate` -> passed; 0 vulnerabilities.
+- `npm.cmd run dev` -> passed and printed `Timer Bot initialized with default timezone Asia/Jerusalem`.
+- `node dist/src/index.js` -> passed and printed `Timer Bot initialized with default timezone Asia/Jerusalem`.
+- `npm.cmd run wa:send` -> failed fast with usage and no WhatsApp connection attempt.
+- `npm.cmd run wa:send -- --to invalid-recipient --text "test message"` -> failed fast with `errorCode=invalid_recipient` and no WhatsApp connection attempt.
+- A one-off compiled-script worker stress check using two separate SQLite connections produced one claim/send and one no-op result for the same due message.
+- `npm.cmd run wa:connect` and valid `npm.cmd run wa:send -- --to ...` were intentionally not run because they touch live WhatsApp auth/session state or can send external messages.
+
+### Verification
+
+- Full automated verification passed after fixes.
+- Safe local smoke flow passed after fixes.
+- Chunk 5 concurrency/idempotency behavior remained intact after fixes.
+- `npm.cmd audit --audit-level=moderate` found 0 vulnerabilities.
+
+### Manual Test
+
+- Not performed in this bug hunt. Real WhatsApp QR/connect/send tests require user-approved manual verification gates.
+
+### Known Limitations
+
+- At that point, retry/failure policy had not yet been implemented; it was later completed in Chunk 6.
+- No real scheduled WhatsApp send wiring was implemented.
+- `wa:connect` remains a live WhatsApp command and should be run only when the user intends to use or refresh the linked-device session.
+
+## Chunk 6 - Retry & Failure Policy
+
+Status: completed
+
+### Scope
+
+- Add explicit retry classification for scheduled-message send results.
+- Add bounded retry schedule: 10s, 30s, 2m, and 5m.
+- Add default max attempts of 4.
+- Add `next_attempt_at_utc` to the SQLite schema.
+- Keep attempts tracking in SQLite and increment it for each actual send attempt, including a final success.
+- Retryable failures move a message from `processing` back to `pending` with `next_attempt_at_utc`.
+- Terminal failures move a message from `processing` to `failed` immediately.
+- Retryable failures at max attempts move to `failed`.
+- Store sanitized `last_error` only.
+- Treat unknown failures as terminal by default, with an explicit `retryUnknownFailures` option for controlled cases.
+- Do not wire the real Baileys adapter to scheduled sends yet.
+
+### Files Changed
+
+- `src/db/migrations/002_add_next_attempt_at.ts`: added migration for `next_attempt_at_utc` and the updated due-message index.
+- `src/db/Migrations.ts`: registered migration 002.
+- `src/domain/ScheduledMessage.ts`: added optional `nextAttemptAtUtc`.
+- `src/db/ScheduledMessageRepository.ts`: claim now respects `next_attempt_at_utc`; added retryable failure, terminal failure, and attempt-incrementing success transitions; reschedule clears retry metadata.
+- `src/scheduler/RetryPolicy.ts`: added retry defaults, failure classification, unknown-failure behavior, and `last_error` sanitization.
+- `src/scheduler/SchedulerWorker.ts`: applies retry/failure classification and updates DB state after send attempts.
+- `test/integration/SchedulerWorker.sqlite.test.ts`: added Chunk 6 retry/failure/migration coverage and updated success attempt expectations.
+- `README.md`, `docs/project_state.md`, `docs/file_guide.md`, and `docs/implementation_log.md`: updated for Chunk 6.
+
+### Commands Run
+
+- `npm.cmd run typecheck` -> passed.
+- `npm.cmd test` -> passed; 9 test files, 45 tests.
+- `npm.cmd run build` -> passed.
+
+### Verification
+
+- Typecheck passed.
+- Build passed.
+- Unit and integration tests passed:
+  - retryable failure returns a message to `pending`, increments `attempts`, sets `next_attempt_at_utc`, and stores sanitized `last_error`.
+  - a pending retry is not claimed before `next_attempt_at_utc`.
+  - terminal failure moves a message to `failed` immediately.
+  - max attempts moves a retryable failure to `failed`.
+  - success after retry moves to `sent` and preserves total attempt count.
+  - sensitive-looking `last_error` content is sanitized.
+  - unknown failures are terminal by default.
+  - unknown failures can be configured as retryable.
+  - rescheduling a pending retry clears retry metadata.
+  - an existing Chunk 4 database migrates and preserves claimability of existing pending messages.
+  - Chunk 5 no-duplicate worker behavior still passes.
+
+### Manual Test
+
+- Not required for Chunk 6.
+
+### Known Limitations
+
+- The worker is still not wired to the real Baileys adapter; that is reserved for Chunk 7.
+- The worker has no process/polling CLI yet; that is reserved for Chunk 7.
+- Stale `processing` recovery after process crash is not implemented yet; that is reserved for Chunk 8.
+- If the process crashes after provider success but before SQLite marks `sent`, true exactly-once delivery still cannot be guaranteed without provider-side idempotency.
