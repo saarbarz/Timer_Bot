@@ -272,6 +272,20 @@ export class ScheduledMessageRepository {
 
     return result.changes === 0 ? undefined : this.findById(id);
   }
+
+  updatePendingText(id: string, text: string, updatedAtUtc: string): ScheduledMessage | undefined {
+    const result = this.db
+      .prepare<[string, string, string]>(
+        `
+          UPDATE scheduled_messages
+          SET text = ?, updated_at_utc = ?
+          WHERE id = ? AND status = 'pending'
+        `
+      )
+      .run(text, updatedAtUtc, id);
+
+    return result.changes === 0 ? undefined : this.findById(id);
+  }
 }
 
 function mapScheduledMessage(row: ScheduledMessageRow): ScheduledMessage {

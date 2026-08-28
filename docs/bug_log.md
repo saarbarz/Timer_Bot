@@ -10,6 +10,7 @@ Track open and resolved bugs by chunk or version.
 
 - True exactly-once WhatsApp delivery cannot be guaranteed if the provider accepts a message and the process crashes before SQLite records `sent`.
 - Chunk 8 stale-processing recovery uses a timeout to recover crash-before-send rows, but it cannot distinguish that case from the known hard case where WhatsApp accepted a message immediately before the crash.
+- Chunk 9 web UI is localhost-only and does not replace the foreground scheduler worker process or a future 24/7 deployment setup.
 
 ## Resolved Bugs
 

@@ -704,3 +704,67 @@ Status: completed.
 - `schedule:worker` is still a foreground local process; it is not a Windows service or 24/7 deployment.
 - Stale-processing recovery uses a timeout. The default is 10 minutes and can be changed with `--stale-processing-ms`.
 - If WhatsApp accepted a message immediately before a crash and SQLite did not record `sent`, stale-processing recovery can still cause a duplicate later. This is the known provider-idempotency hard case.
+
+## Chunk 9 - Local Web UI
+
+Status: completed.
+
+### Scope
+
+- Add a minimal local web UI after the CLI and worker flows are stable.
+- Add a thin HTTP API over `ScheduleService`; do not let the frontend write directly to SQLite.
+- Support connection status and QR display.
+- Support scheduling, listing, editing pending text/time, and cancelling pending messages.
+- Keep QR in memory only. Do not log it or store it in SQLite.
+- Do not add accounts, billing, SaaS, multi-user features, production deployment, or a service manager.
+
+### Files Changed
+
+- `package.json`: added `web` script.
+- `src/config/AppConfig.ts`: added `webPort`, defaulting to `PORT` or `3000`.
+- `src/domain/ScheduleService.ts`: added `updateText()` for pending scheduled messages.
+- `src/db/ScheduledMessageRepository.ts`: added `updatePendingText()`.
+- `src/server/ConnectionController.ts`: added fakeable connection/QR controller backed by `BaileysWhatsAppAdapter` for the real server.
+- `src/server/LocalWebServer.ts`: added localhost HTTP API and static UI serving.
+- `src/server/localWebUiHtml.ts`: added browser UI for connection status, QR display, schedule create/list/edit/cancel.
+- `src/server/startLocalWebServer.ts`: added `npm.cmd run web` entry point.
+- `test/integration/LocalWebServer.test.ts`: added API and UI smoke tests with a temp SQLite DB and fake connection controller.
+- `README.md`, `docs/project_state.md`, `docs/file_guide.md`, `docs/bug_log.md`, and `docs/implementation_log.md`: updated for Chunk 9.
+
+### Commands Run
+
+- Extracted the Chunk 9 section from `docs/WhatsApp_Send_Later_Codex_Implementation_Plan_HE.docx`.
+- `npm.cmd run typecheck` -> failed once because JSON body parsing returned a broad `object` type; fixed by narrowing to `Record<string, unknown>`.
+- `npm.cmd run typecheck` -> passed.
+- `npm.cmd test` -> failed once because a test used `2026-08-28T12:00` as future time after that local time had already passed; fixed by moving the test data to `2026-12-15`.
+- `npm.cmd test` -> passed; 13 test files, 64 tests.
+- `npm.cmd run build` -> passed.
+- Temporary localhost smoke:
+  - `$env:PORT='3099'; $env:DATABASE_PATH='C:\Users\Lenovo\AppData\Local\Temp\timerbot_stage9_smoke.sqlite'; npm.cmd run web` -> server started at `http://127.0.0.1:3099`.
+  - `Invoke-WebRequest -Uri 'http://127.0.0.1:3099/' -UseBasicParsing` -> passed with HTTP 200.
+  - `Invoke-WebRequest -Uri 'http://127.0.0.1:3099/api/messages' -UseBasicParsing` -> passed with HTTP 200 and `{"messages":[]}`.
+  - Server was stopped with Ctrl+C and Windows batch termination confirmation.
+
+### Verification
+
+- Typecheck passed.
+- Build passed.
+- Unit and integration tests passed:
+  - existing scheduling, worker, retry, restart, cancel, and list-format behavior still passes.
+  - local UI route serves HTML.
+  - HTTP API creates, lists, updates, and cancels scheduled messages through a temporary SQLite database.
+  - invalid recipient and empty text return 4xx responses.
+  - connection status and QR endpoints work with a fake in-memory connection controller.
+- Localhost smoke confirmed the web server starts and serves both `/` and `/api/messages`.
+
+### Manual Test
+
+- No live WhatsApp message was sent for Chunk 9 automated verification.
+- To try the UI manually, run `npm.cmd run web` and open `http://127.0.0.1:3000`.
+
+### Known Limitations
+
+- The web UI is local and single-user only.
+- The web UI does not add accounts, billing, teams, cloud hosting, or multi-user isolation.
+- `npm.cmd run web` serves the UI/API; the actual scheduled-send worker still runs through `npm.cmd run schedule:worker` until a later deployment/service chunk.
+- QR is exposed only through a local memory endpoint for display and is not persisted, but it is still sensitive and should not be pasted into chat.

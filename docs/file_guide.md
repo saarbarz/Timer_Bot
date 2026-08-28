@@ -35,6 +35,10 @@
 - `src/db/migrations/002_add_next_attempt_at.ts`: adds `next_attempt_at_utc` and updates the due-message index for retry scheduling.
 - `src/cli/waConnect.ts`: manual CLI for opening a Baileys WhatsApp connection and showing the linked-device QR.
 - `src/cli/waSend.ts`: manual one-shot CLI for validating a send request, lazy-loading the Baileys adapter only after validation passes, connecting to WhatsApp, and sending one text message to an explicit phone-number recipient.
+- `src/server/ConnectionController.ts`: in-memory connection/QR controller for the local web server, backed by `BaileysWhatsAppAdapter` in production and fakeable in tests.
+- `src/server/LocalWebServer.ts`: localhost HTTP request handler and server factory with JSON API routes over `ScheduleService`.
+- `src/server/localWebUiHtml.ts`: minimal local browser UI for connection status, QR display, schedule creation, listing, pending edits, and cancellation.
+- `src/server/startLocalWebServer.ts`: `npm.cmd run web` entry point.
 - `src/whatsapp/WhatsAppAdapter.ts`: transport interface and internal send result types that future scheduler code must depend on instead of Baileys directly.
 - `src/whatsapp/BaileysConnectionState.ts`: pure mapping from Baileys connection updates to internal connection statuses.
 - `src/whatsapp/ConnectionManager.ts`: centralized lifecycle manager for connection status, bounded reconnect backoff, timer cancellation, and shutdown.
@@ -47,6 +51,7 @@
 - `test/unit/config.test.ts`: Chunk 0 smoke tests for config/startup wiring and the Windows direct-execution regression.
 - `test/integration/ScheduleService.sqlite.test.ts`: Chunk 4 integration tests against temporary SQLite databases for migrations, create/list/update/cancel rules, persistence after reopen, and timezone conversion.
 - `test/integration/SchedulerWorker.sqlite.test.ts`: Chunk 5 through Chunk 8 integration tests for due-message claiming, future/cancelled exclusion, successful sent marking, no duplicate sends, overdue restart behavior, cancelled-message exclusion, reschedule timing, stale-processing recovery, retry backoff, terminal failure, max attempts, recovery after retry, retry metadata cleanup, and migrating an existing Chunk 4 database.
+- `test/integration/LocalWebServer.test.ts`: Chunk 9 API and local UI smoke tests against a temporary SQLite database and fake connection controller.
 - `test/unit/BaileysConnectionState.test.ts`: Chunk 1 connection status transition tests.
 - `test/unit/BaileysReconnect.test.ts`: reconnect decision tests, including relink-required Baileys close codes.
 - `test/unit/BaileysEventHandlers.test.ts`: tests for event handler registration, credential save callback wiring, QR forwarding, and credential-save error reporting.

@@ -25,13 +25,14 @@ npm.cmd run schedule:list
 npm.cmd run schedule:cancel -- <id>
 npm.cmd run schedule:update-time -- <id> --in 90s --timezone <IANA timezone>
 npm.cmd run schedule:worker
+npm.cmd run web
 ```
 
 The npm scripts invoke TypeScript through `node --import tsx` for reliable process exit behavior on this Windows setup.
 
 ## Current Scope
 
-The project has completed Chunk 8: Restart / overdue / cancel edge cases. It can reuse the saved WhatsApp linked-device session, send one explicit text message, create/list/cancel/reschedule messages in SQLite, run a deterministic scheduler worker against a fakeable sender, apply bounded retry/terminal failure handling, run a process-mode scheduler worker wired to the real Baileys adapter, send overdue pending messages once after restart, skip cancelled messages, honor updated scheduled times, and recover stale `processing` rows after a configurable timeout. The user confirmed the manual restart and cancel tests worked on 2026-08-28. The next allowed chunk is Chunk 9.
+The project has completed Chunk 9: Local Web UI. It can reuse the saved WhatsApp linked-device session, send one explicit text message, create/list/cancel/reschedule messages in SQLite, run a deterministic scheduler worker against a fakeable sender, apply bounded retry/terminal failure handling, run a process-mode scheduler worker wired to the real Baileys adapter, recover stale `processing` rows, and serve a local browser UI with a thin HTTP API over the existing scheduling services. The next allowed chunk is Chunk 10: Recipient UX.
 
 Post-Chunk 5 bug-hunt fixes are also complete: the startup entry point now prints correctly on Windows, `wa:send` validates invalid input before loading or connecting WhatsApp transport, and safe smoke commands have been reverified.
 
@@ -130,3 +131,19 @@ npm.cmd run schedule:worker -- --poll-ms 1000
 Expected: the cancelled row remains `status=cancelled` and no message is delivered.
 
 `schedule:list` shows local display fields such as `scheduledAtLocal` and `sentAtLocal` first, then the canonical UTC fields used by SQLite.
+
+## Chunk 9 Local Web UI
+
+Run:
+
+```powershell
+npm.cmd run web
+```
+
+Then open:
+
+```text
+http://127.0.0.1:3000
+```
+
+The web UI supports WhatsApp connection status, QR display for linking, schedule creation, message listing, pending-message text/time edits, and pending-message cancellation. It is a local single-user UI only; it does not add accounts, billing, cloud hosting, or multi-user behavior.

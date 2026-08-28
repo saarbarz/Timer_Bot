@@ -120,6 +120,24 @@ export class ScheduleService {
     return updated;
   }
 
+  updateText(id: string, text: string): ScheduledMessage {
+    const existing = this.getExisting(id);
+    if (existing.status !== "pending") {
+      throw new ScheduleError("scheduled_message_not_pending", "Only pending messages can be edited.");
+    }
+
+    if (text.trim().length === 0) {
+      throw new ScheduleError("empty_text", "Text is required.");
+    }
+
+    const updated = this.repository.updatePendingText(id, text, this.clock.now().toISOString());
+    if (updated === undefined) {
+      throw new ScheduleError("scheduled_message_not_pending", "Only pending messages can be edited.");
+    }
+
+    return updated;
+  }
+
   private getExisting(id: string): ScheduledMessage {
     const existing = this.repository.findById(id);
     if (existing === undefined) {

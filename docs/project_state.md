@@ -2,9 +2,9 @@
 
 ## Current Position
 
-- Current chunk: Chunk 8 - Restart / overdue / cancel edge cases is complete.
-- Last completed chunk: Chunk 8 - Restart / overdue / cancel edge cases.
-- Next allowed chunk: Chunk 9.
+- Current chunk: Chunk 9 - Local Web UI is complete.
+- Last completed chunk: Chunk 9 - Local Web UI.
+- Next allowed chunk: Chunk 10 - Recipient UX.
 - WhatsApp code status: Baileys connection adapter exists, manual QR/device linking was confirmed, one-shot text sending behind `WhatsAppAdapter` was confirmed by real manual send tests, scheduled WhatsApp delivery was confirmed by real manual test, and reconnect lifecycle lives in `ConnectionManager`.
 
 ## Environment
@@ -57,6 +57,10 @@
 - `schedule:worker` connects to WhatsApp, waits for `connected`, then polls SQLite and sends due messages through `WhatsAppMessageSender`.
 - `schedule:worker` recovers stale `processing` rows after 10 minutes by default, overrideable with `--stale-processing-ms`.
 - Scheduled real sends now pass through `WhatsAppMessageSender`, which adapts stored normalized recipient data to the existing `WhatsAppAdapter.sendText()` API.
+- Chunk 9 adds `npm.cmd run web`, a localhost-only HTTP server at `127.0.0.1:<PORT>` with `PORT=3000` by default.
+- The local web UI supports connection status, in-memory QR display, schedule creation, schedule listing, pending-message text/time edits, and pending-message cancellation.
+- The HTTP API is a thin layer over `ScheduleService`; frontend code does not write directly to SQLite.
+- The QR shown through the web API is held in process memory only and is not written to logs or SQLite.
 - `src/index.ts` uses `pathToFileURL` for direct-execution detection so startup smoke output works with Windows paths.
 
 ## Resume Instructions
@@ -73,6 +77,7 @@
 10. Chunk 6 retry/failure policy is complete and verified by SQLite integration tests.
 11. Chunk 7 automated implementation is complete and verified by tests/build/safe CLI smoke. User confirmed one real scheduled WhatsApp delivery worked on 2026-08-27.
 12. Chunk 8 automated implementation is complete and verified by tests/build/safe CLI smoke. User confirmed the Chunk 8 manual restart test worked on 2026-08-28 after stopping the foreground worker once with Ctrl+C and restarting it. User also confirmed the Chunk 8 manual cancel test worked on 2026-08-28: the message was not sent and `schedule:list` showed it was cancelled.
+13. Chunk 9 local web UI is complete and verified by API tests, UI smoke, typecheck, tests, build, and a localhost server smoke.
 
 ## Important Caveat
 

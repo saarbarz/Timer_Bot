@@ -6,6 +6,7 @@ export interface AppConfig {
   readonly dataDir: string;
   readonly databasePath: string;
   readonly logsDir: string;
+  readonly webPort: number;
 }
 
 const projectRoot = process.cwd();
@@ -15,5 +16,6 @@ export const appConfig: AppConfig = {
   authDir: process.env.AUTH_DIR ?? path.join(projectRoot, "auth"),
   dataDir: process.env.DATA_DIR ?? path.join(projectRoot, "data"),
   databasePath: process.env.DATABASE_PATH ?? path.join(projectRoot, "data", "timer-bot.sqlite"),
-  logsDir: process.env.LOGS_DIR ?? path.join(projectRoot, "logs")
+  logsDir: process.env.LOGS_DIR ?? path.join(projectRoot, "logs"),
+  webPort: Number(process.env.PORT ?? "3000")
 };
