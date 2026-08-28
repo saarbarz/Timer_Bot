@@ -15,6 +15,8 @@
 - `src/cli/scheduleArgs.ts`: pure parser and relative-time resolver for schedule/list/cancel/worker CLI arguments.
 - `src/cli/scheduleCancel.ts`: cancels one pending scheduled message by id.
 - `src/cli/scheduleList.ts`: lists scheduled messages with privacy-safe status/timestamp metadata only.
+- `src/cli/scheduleListFormat.ts`: formats schedule-list output with local timestamp fields plus canonical UTC fields, without recipient numbers or message text.
+- `src/cli/scheduleUpdateTime.ts`: reschedules one pending scheduled message using an absolute or relative time.
 - `src/cli/scheduleWorker.ts`: process-mode scheduler that connects to WhatsApp and polls SQLite for due messages to send.
 - `src/cli/waitForConnected.ts`: shared helper for waiting until a WhatsApp adapter reports `connected` or `needs_relink`.
 - `src/config/AppConfig.ts`: local configuration for default timezone and generated local paths. It contains no credentials.
@@ -24,10 +26,10 @@
 - `src/domain/Timezone.ts`: IANA timezone conversion helper for local datetime input to UTC.
 - `src/db/Database.ts`: opens the SQLite database, creates the data directory, applies pragmas, and runs migrations.
 - `src/db/Migrations.ts`: migration runner with `schema_migrations`.
-- `src/db/ScheduledMessageRepository.ts`: SQLite repository for scheduled message create/find/list/cancel/update-time operations, atomic due-message claiming, sent marking, retry scheduling, and failed marking.
+- `src/db/ScheduledMessageRepository.ts`: SQLite repository for scheduled message create/find/list/cancel/update-time operations, atomic due-message claiming, sent marking, retry scheduling, failed marking, and stale-processing recovery.
 - `src/scheduler/MessageSender.ts`: fakeable scheduled-message sender abstraction used by the worker.
 - `src/scheduler/RetryPolicy.ts`: retry/failure classification, default send backoff schedule, max-attempt defaults, unknown-failure behavior, and `last_error` sanitization.
-- `src/scheduler/SchedulerWorker.ts`: deterministic single-message worker that claims one due pending message, invokes `MessageSender`, marks successful sends as `sent`, schedules retryable failures, and marks terminal/max-attempt failures as `failed`.
+- `src/scheduler/SchedulerWorker.ts`: deterministic single-message worker that recovers stale `processing` rows, claims one due pending message, invokes `MessageSender`, marks successful sends as `sent`, schedules retryable failures, and marks terminal/max-attempt failures as `failed`.
 - `src/scheduler/WhatsAppMessageSender.ts`: adapts stored scheduled messages to the real `WhatsAppAdapter.sendText()` transport API.
 - `src/db/migrations/001_create_scheduled_messages.ts`: creates `scheduled_messages` and its due-message index.
 - `src/db/migrations/002_add_next_attempt_at.ts`: adds `next_attempt_at_utc` and updates the due-message index for retry scheduling.
@@ -44,14 +46,15 @@
 
 - `test/unit/config.test.ts`: Chunk 0 smoke tests for config/startup wiring and the Windows direct-execution regression.
 - `test/integration/ScheduleService.sqlite.test.ts`: Chunk 4 integration tests against temporary SQLite databases for migrations, create/list/update/cancel rules, persistence after reopen, and timezone conversion.
-- `test/integration/SchedulerWorker.sqlite.test.ts`: Chunk 5 and Chunk 6 integration tests for due-message claiming, future/cancelled exclusion, successful sent marking, no duplicate sends, retry backoff, terminal failure, max attempts, recovery after retry, retry metadata cleanup, and migrating an existing Chunk 4 database.
+- `test/integration/SchedulerWorker.sqlite.test.ts`: Chunk 5 through Chunk 8 integration tests for due-message claiming, future/cancelled exclusion, successful sent marking, no duplicate sends, overdue restart behavior, cancelled-message exclusion, reschedule timing, stale-processing recovery, retry backoff, terminal failure, max attempts, recovery after retry, retry metadata cleanup, and migrating an existing Chunk 4 database.
 - `test/unit/BaileysConnectionState.test.ts`: Chunk 1 connection status transition tests.
 - `test/unit/BaileysReconnect.test.ts`: reconnect decision tests, including relink-required Baileys close codes.
 - `test/unit/BaileysEventHandlers.test.ts`: tests for event handler registration, credential save callback wiring, QR forwarding, and credential-save error reporting.
 - `test/unit/ConnectionManager.test.ts`: fake-timer tests for bounded reconnect backoff, no reconnect on relink-required closes, and shutdown timer cancellation.
 - `test/unit/RecipientNormalizer.test.ts`: Chunk 2 tests for phone-number normalization and group rejection.
 - `test/unit/SendTextNow.test.ts`: Chunk 2 tests for validation without an adapter, empty text rejection, exactly-one adapter call on success, and transport exception mapping.
-- `test/unit/scheduleArgs.test.ts`: Chunk 7 tests for schedule/create/cancel/worker CLI argument parsing and `--in` relative time resolution.
+- `test/unit/scheduleArgs.test.ts`: Chunk 7 and Chunk 8 tests for schedule/create/cancel/update-time/worker CLI argument parsing, `--in` relative time resolution, and stale-processing worker options.
+- `test/unit/scheduleListFormat.test.ts`: tests local timestamp formatting for `schedule:list` and guards against printing recipient or message text.
 - `test/unit/WhatsAppMessageSender.test.ts`: Chunk 7 tests for adapting scheduled messages to the WhatsApp adapter and preserving failure classification.
 
 ## Documentation

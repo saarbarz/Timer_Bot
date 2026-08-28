@@ -13,6 +13,7 @@ import {
 export interface SchedulerWorkerOptions {
   readonly clock?: Clock;
   readonly retryPolicy?: SendRetryPolicyOptions;
+  readonly staleProcessingMs?: number;
 }
 
 export interface SchedulerWorkerRunResult {
@@ -21,6 +22,7 @@ export interface SchedulerWorkerRunResult {
   readonly sendFailed: number;
   readonly retryScheduled: number;
   readonly failed: number;
+  readonly recoveredStaleProcessing: number;
   readonly messageId?: string;
   readonly finalStatus?: ScheduledMessage["status"];
   readonly updatedAtUtc?: string;
@@ -29,6 +31,7 @@ export interface SchedulerWorkerRunResult {
 export class SchedulerWorker {
   private readonly clock: Clock;
   private readonly retryPolicy: SendRetryPolicy;
+  private readonly staleProcessingMs: number;
 
   constructor(
     private readonly repository: ScheduledMessageRepository,
@@ -37,17 +40,23 @@ export class SchedulerWorker {
   ) {
     this.clock = options.clock ?? systemClock;
     this.retryPolicy = createSendRetryPolicy(options.retryPolicy);
+    this.staleProcessingMs = options.staleProcessingMs ?? 10 * 60 * 1_000;
   }
 
   async runOnce(): Promise<SchedulerWorkerRunResult> {
-    const claimed = this.repository.claimNextDuePending(this.clock.now().toISOString());
+    const now = this.clock.now();
+    const recoveredStaleProcessing = this.repository.recoverStaleProcessing(
+      new Date(now.getTime() - this.staleProcessingMs).toISOString(),
+      now.toISOString()
+    );
+    const claimed = this.repository.claimNextDuePending(now.toISOString());
     if (claimed === undefined) {
-      return emptyRunResult();
+      return emptyRunResult(recoveredStaleProcessing);
     }
 
     const sendResult = await this.sendClaimedMessage(claimed);
     if (!sendResult.success) {
-      return this.handleSendFailure(claimed, sendResult);
+      return this.handleSendFailure(claimed, sendResult, recoveredStaleProcessing);
     }
 
     const sentAtUtc = this.clock.now().toISOString();
@@ -64,6 +73,7 @@ export class SchedulerWorker {
       sendFailed: 0,
       retryScheduled: 0,
       failed: 0,
+      recoveredStaleProcessing,
       messageId: claimed.id,
       finalStatus: markedSent?.status,
       updatedAtUtc: markedSent?.updatedAtUtc ?? sentAtUtc
@@ -84,7 +94,8 @@ export class SchedulerWorker {
 
   private handleSendFailure(
     claimed: ScheduledMessage,
-    sendResult: Extract<MessageSendResult, { success: false }>
+    sendResult: Extract<MessageSendResult, { success: false }>,
+    recoveredStaleProcessing: number
   ): SchedulerWorkerRunResult {
     const now = this.clock.now();
     const classification = classifySendFailure(sendResult, claimed.attempts, now, this.retryPolicy);
@@ -103,6 +114,7 @@ export class SchedulerWorker {
         sendFailed: 1,
         retryScheduled: retryable === undefined ? 0 : 1,
         failed: 0,
+        recoveredStaleProcessing,
         messageId: claimed.id,
         finalStatus: retryable?.status,
         updatedAtUtc: retryable?.updatedAtUtc ?? now.toISOString()
@@ -117,6 +129,7 @@ export class SchedulerWorker {
       sendFailed: 1,
       retryScheduled: 0,
       failed: failed === undefined ? 0 : 1,
+      recoveredStaleProcessing,
       messageId: claimed.id,
       finalStatus: failed?.status,
       updatedAtUtc: failed?.updatedAtUtc ?? now.toISOString()
@@ -124,12 +137,13 @@ export class SchedulerWorker {
   }
 }
 
-function emptyRunResult(): SchedulerWorkerRunResult {
+function emptyRunResult(recoveredStaleProcessing = 0): SchedulerWorkerRunResult {
   return {
     claimed: 0,
     sent: 0,
     sendFailed: 0,
     retryScheduled: 0,
-    failed: 0
+    failed: 0,
+    recoveredStaleProcessing
   };
 }

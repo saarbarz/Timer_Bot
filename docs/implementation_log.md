@@ -557,7 +557,7 @@ Status: completed
 
 ## Chunk 7 - End-to-End CLI Scheduling
 
-Status: automated implementation completed; manual real scheduled WhatsApp delivery verification pending.
+Status: completed.
 
 ### Scope
 
@@ -616,9 +616,10 @@ Status: automated implementation completed; manual real scheduled WhatsApp deliv
 
 ### Manual Test
 
-- Not completed yet.
-- User must run the real scheduled send flow with a consenting test recipient and confirm the message arrives exactly once.
-- Suggested manual command sequence:
+- Completed on 2026-08-27.
+- User confirmed one real scheduled WhatsApp message was delivered successfully.
+- Real recipient and message text are intentionally not recorded.
+- Repeat command sequence:
   - `npm.cmd run wa:connect`
   - `npm.cmd run schedule -- --to <country-code-number> --text "scheduled test message" --in 90s --timezone Asia/Jerusalem`
   - `npm.cmd run schedule:list`
@@ -627,9 +628,79 @@ Status: automated implementation completed; manual real scheduled WhatsApp deliv
 
 ### Known Limitations
 
-- Manual live WhatsApp delivery confirmation is still required before Chunk 8.
 - `schedule:worker` is a foreground local process; it is not a service manager or 24/7 deployment.
 - Chunk 8 restart/overdue/cancel edge-case recovery is not implemented yet.
 - Stale `processing` recovery after a process crash is not implemented yet.
 - If the process crashes after provider success but before SQLite records `sent`, true exactly-once delivery still cannot be guaranteed without provider-side idempotency.
 - The temp smoke SQLite file at `C:\Users\Lenovo\AppData\Local\Temp\timerbot_stage7_smoke.sqlite` could not be removed by the tool policy after verification. It is outside the project and contains only fake smoke-test data.
+
+## Chunk 8 - Restart / Overdue / Cancel Edge Cases
+
+Status: completed.
+
+### Scope
+
+- Verify that an overdue pending message is sent once when the worker starts after the scheduled time.
+- Verify that a cancelled message is never sent after its scheduled time.
+- Verify that updating a pending message time means only the new scheduled time can trigger a send.
+- Add stale `processing` recovery for the crash-after-claim-before-send case.
+- Keep the known hard case documented: a crash after WhatsApp accepts a message but before SQLite records `sent` still cannot be solved without provider-side idempotency.
+- Do not implement UI, server mode, recurring messages, multi-user behavior, or production service management.
+
+### Files Changed
+
+- `package.json`: added `schedule:update-time` script.
+- `src/cli/scheduleArgs.ts`: added update-time parsing and `--stale-processing-ms` parsing for the worker.
+- `src/cli/scheduleUpdateTime.ts`: added pending-message reschedule CLI.
+- `src/cli/scheduleWorker.ts`: passes the stale-processing timeout into `SchedulerWorker` and logs stale recovery counts.
+- `src/cli/scheduleList.ts`: now uses a dedicated formatter that includes local timestamp display fields before canonical UTC fields.
+- `src/cli/scheduleListFormat.ts`: added privacy-safe schedule-list formatter.
+- `src/db/ScheduledMessageRepository.ts`: added `recoverStaleProcessing()`.
+- `src/scheduler/SchedulerWorker.ts`: recovers stale `processing` rows before claiming due messages and reports `recoveredStaleProcessing` in run results.
+- `test/unit/scheduleArgs.test.ts`: added update-time and stale-processing option coverage.
+- `test/unit/scheduleListFormat.test.ts`: added local timestamp and privacy guard coverage for list output.
+- `test/integration/SchedulerWorker.sqlite.test.ts`: added overdue restart, cancelled-message, reschedule timing, stale-processing recovery, and fresh-processing non-recovery coverage.
+- `README.md`, `docs/project_state.md`, `docs/file_guide.md`, `docs/bug_log.md`, and `docs/implementation_log.md`: updated for Chunk 8.
+
+### Commands Run
+
+- `npm.cmd run typecheck` -> passed.
+- `npm.cmd test` -> passed; 11 test files, 58 tests.
+- `npm.cmd run build` -> passed.
+- Safe temp-database CLI smoke:
+  - `$env:DATABASE_PATH = 'C:\Users\Lenovo\AppData\Local\Temp\timerbot_stage8_smoke.sqlite'; npm.cmd run schedule -- --to +972501234567 --text smoke --in 10m --timezone Asia/Jerusalem` -> passed; created a pending scheduled message.
+  - `$env:DATABASE_PATH = 'C:\Users\Lenovo\AppData\Local\Temp\timerbot_stage8_smoke.sqlite'; npm.cmd run schedule:update-time -- <id> --in 20m --timezone Asia/Jerusalem` -> passed; updated the pending message time.
+  - `$env:DATABASE_PATH = 'C:\Users\Lenovo\AppData\Local\Temp\timerbot_stage8_smoke.sqlite'; npm.cmd run schedule:list` -> passed; listed the row with the updated `scheduledAtUtc`.
+  - `$env:DATABASE_PATH = 'C:\Users\Lenovo\AppData\Local\Temp\timerbot_stage8_smoke.sqlite'; npm.cmd run schedule:cancel -- <id>` -> passed; cancelled the temp row.
+
+### Verification
+
+- Typecheck passed.
+- Build passed.
+- Unit and integration tests passed:
+  - existing scheduling CRUD behavior still passes.
+  - existing worker atomic claim/idempotency/retry behavior still passes.
+  - an overdue pending message is sent once when a restarted worker runs after the due time.
+  - a cancelled message is not sent after its due time.
+  - a rescheduled message is not sent at the old due time and is sent once at the new due time.
+  - a stale `processing` row is recovered to `pending`, claimed, and sent once.
+  - a fresh `processing` row is not recovered before the stale-processing timeout.
+  - update-time CLI parsing accepts relative time.
+  - invalid stale-processing worker intervals are rejected.
+- Safe CLI smoke passed without connecting to WhatsApp or touching the real app database.
+
+### Manual Test
+
+- Restart flow completed on 2026-08-28.
+- User confirmed the restart flow worked after scheduling a message, starting `schedule:worker`, stopping it after about 30 seconds with Ctrl+C, restarting the worker, and observing the scheduled send succeed.
+- User did not run `schedule:list` during the first worker run because `schedule:worker` is foreground and was still running.
+- Cancel flow completed on 2026-08-28.
+- User confirmed the cancelled scheduled message was not sent and `schedule:list` showed it was cancelled.
+- User noticed `schedule:list` appeared to show times three hours earlier; root cause was list output printing UTC-only timestamps. Fixed by adding local timestamp display fields while keeping UTC audit fields.
+- Real recipient and message text should not be pasted into chat or committed.
+
+### Known Limitations
+
+- `schedule:worker` is still a foreground local process; it is not a Windows service or 24/7 deployment.
+- Stale-processing recovery uses a timeout. The default is 10 minutes and can be changed with `--stale-processing-ms`.
+- If WhatsApp accepted a message immediately before a crash and SQLite did not record `sent`, stale-processing recovery can still cause a duplicate later. This is the known provider-idempotency hard case.

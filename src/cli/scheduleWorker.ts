@@ -32,13 +32,15 @@ await adapter.connect();
 await waitForConnected(adapter);
 
 const repository = new ScheduledMessageRepository(db);
-const worker = new SchedulerWorker(repository, new WhatsAppMessageSender(adapter));
+const worker = new SchedulerWorker(repository, new WhatsAppMessageSender(adapter), {
+  staleProcessingMs: args.value.staleProcessingMs
+});
 
 console.log(`Schedule worker started. pollMs=${args.value.pollMs}`);
 
 while (true) {
   const result = await worker.runOnce();
-  if (result.claimed > 0 || result.sendFailed > 0) {
+  if (result.claimed > 0 || result.sendFailed > 0 || result.recoveredStaleProcessing > 0) {
     console.log(
       [
         `timestampUtc=${new Date().toISOString()}`,
@@ -49,7 +51,8 @@ while (true) {
         `sent=${result.sent}`,
         `sendFailed=${result.sendFailed}`,
         `retryScheduled=${result.retryScheduled}`,
-        `failed=${result.failed}`
+        `failed=${result.failed}`,
+        `recoveredStaleProcessing=${result.recoveredStaleProcessing}`
       ]
         .filter((part): part is string => part !== undefined)
         .join(" ")

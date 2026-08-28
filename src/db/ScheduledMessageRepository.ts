@@ -144,6 +144,24 @@ export class ScheduledMessageRepository {
     return claimedId === undefined ? undefined : this.findById(claimedId);
   }
 
+  recoverStaleProcessing(staleBeforeUtc: string, updatedAtUtc: string): number {
+    const result = this.db
+      .prepare<[string, string]>(
+        `
+          UPDATE scheduled_messages
+          SET
+            status = 'pending',
+            updated_at_utc = ?,
+            next_attempt_at_utc = NULL,
+            last_error = 'stale_processing_recovered'
+          WHERE status = 'processing' AND updated_at_utc <= ?
+        `
+      )
+      .run(updatedAtUtc, staleBeforeUtc);
+
+    return result.changes;
+  }
+
   markProcessingSent(
     id: string,
     sentAtUtc: string,

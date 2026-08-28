@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   parseScheduleCancelArgs,
   parseScheduleCreateArgs,
+  parseScheduleUpdateTimeArgs,
   parseScheduleWorkerArgs,
   resolveScheduledAtLocal
 } from "../../src/cli/scheduleArgs.js";
@@ -75,9 +76,42 @@ describe("schedule CLI argument parsing", () => {
       success: true,
       value: { id: "message-id-1" }
     });
-    expect(parseScheduleWorkerArgs(["--poll-ms", "1000"])).toEqual({
+    expect(parseScheduleWorkerArgs(["--poll-ms", "1000", "--stale-processing-ms", "2000"])).toEqual({
       success: true,
-      value: { pollMs: 1000 }
+      value: { pollMs: 1000, staleProcessingMs: 2000 }
+    });
+  });
+
+  it("parses update-time arguments with relative time", () => {
+    const parsed = parseScheduleUpdateTimeArgs([
+      "message-id-1",
+      "--in",
+      "2m",
+      "--timezone",
+      "Asia/Jerusalem"
+    ]);
+
+    expect(parsed).toEqual({
+      success: true,
+      value: {
+        id: "message-id-1",
+        at: undefined,
+        in: "2m",
+        timezone: "Asia/Jerusalem"
+      }
+    });
+
+    if (parsed.success) {
+      expect(resolveScheduledAtLocal(parsed.value, new Date("2026-08-27T09:00:00.000Z"))).toEqual({
+        success: true,
+        value: "2026-08-27T12:02:00"
+      });
+    }
+  });
+
+  it("rejects invalid worker stale processing intervals", () => {
+    expect(parseScheduleWorkerArgs(["--stale-processing-ms", "999"])).toMatchObject({
+      success: false
     });
   });
 });

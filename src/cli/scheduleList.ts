@@ -1,5 +1,6 @@
 import { openAppDatabase } from "../db/Database.js";
 import { ScheduledMessageRepository } from "../db/ScheduledMessageRepository.js";
+import { formatScheduleListLine } from "./scheduleListFormat.js";
 
 const db = openAppDatabase();
 
@@ -11,19 +12,7 @@ try {
     console.log("No scheduled messages.");
   } else {
     for (const message of messages) {
-      const parts = [
-        `id=${message.id}`,
-        `status=${message.status}`,
-        `scheduledAtUtc=${message.scheduledAtUtc}`,
-        `timezone=${message.timezone}`,
-        `attempts=${message.attempts}`,
-        message.nextAttemptAtUtc === undefined ? undefined : `nextAttemptAtUtc=${message.nextAttemptAtUtc}`,
-        message.sentAtUtc === undefined ? undefined : `sentAtUtc=${message.sentAtUtc}`,
-        message.providerMessageId === undefined ? undefined : `providerMessageId=${message.providerMessageId}`,
-        message.lastError === undefined ? undefined : `lastError=${message.lastError}`
-      ].filter((part): part is string => part !== undefined);
-
-      console.log(parts.join(" "));
+      console.log(formatScheduleListLine(message));
     }
   }
 } finally {

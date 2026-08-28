@@ -2,10 +2,10 @@
 
 ## Current Position
 
-- Current chunk: Chunk 7 - End-to-end CLI scheduling automated implementation is complete; manual real scheduled-delivery verification is pending.
-- Last completed chunk: Chunk 7 automated implementation and safe local verification.
-- Next allowed chunk: Chunk 8 - Restart / overdue / cancel edge cases, after the user confirms one real scheduled WhatsApp delivery.
-- WhatsApp code status: Baileys connection adapter exists, manual QR/device linking was confirmed, one-shot text sending behind `WhatsAppAdapter` was confirmed by real manual send tests, and reconnect lifecycle lives in `ConnectionManager`.
+- Current chunk: Chunk 8 - Restart / overdue / cancel edge cases is complete.
+- Last completed chunk: Chunk 8 - Restart / overdue / cancel edge cases.
+- Next allowed chunk: Chunk 9.
+- WhatsApp code status: Baileys connection adapter exists, manual QR/device linking was confirmed, one-shot text sending behind `WhatsAppAdapter` was confirmed by real manual send tests, scheduled WhatsApp delivery was confirmed by real manual test, and reconnect lifecycle lives in `ConnectionManager`.
 
 ## Environment
 
@@ -52,8 +52,10 @@
 - Chunk 6 intentionally does not wire the worker to the real Baileys adapter.
 - Chunk 7 adds CLI scripts for scheduling, listing, cancelling, and running the real polling worker.
 - `schedule` supports `--at <YYYY-MM-DDTHH:mm[:ss]>` and `--in <duration>` for short manual tests such as `--in 90s`.
-- `schedule:list` prints message id/status/timestamps/retry metadata only; it does not print recipient numbers or message text.
+- `schedule:update-time` supports changing the due time of a pending scheduled message using `--at` or `--in`.
+- `schedule:list` prints message id/status/local timestamps/canonical UTC timestamps/retry metadata only; it does not print recipient numbers or message text.
 - `schedule:worker` connects to WhatsApp, waits for `connected`, then polls SQLite and sends due messages through `WhatsAppMessageSender`.
+- `schedule:worker` recovers stale `processing` rows after 10 minutes by default, overrideable with `--stale-processing-ms`.
 - Scheduled real sends now pass through `WhatsAppMessageSender`, which adapts stored normalized recipient data to the existing `WhatsAppAdapter.sendText()` API.
 - `src/index.ts` uses `pathToFileURL` for direct-execution detection so startup smoke output works with Windows paths.
 
@@ -69,7 +71,8 @@
 8. Chunk 5 worker atomic claim/idempotency is complete and verified by SQLite integration tests.
 9. Post-Chunk 5 bug hunt is complete. Startup smoke commands and safe invalid `wa:send` validation paths were reverified.
 10. Chunk 6 retry/failure policy is complete and verified by SQLite integration tests.
-11. Chunk 7 automated implementation is complete and verified by tests/build/safe CLI smoke. Before implementing Chunk 8, get user confirmation that one scheduled WhatsApp message was actually delivered once.
+11. Chunk 7 automated implementation is complete and verified by tests/build/safe CLI smoke. User confirmed one real scheduled WhatsApp delivery worked on 2026-08-27.
+12. Chunk 8 automated implementation is complete and verified by tests/build/safe CLI smoke. User confirmed the Chunk 8 manual restart test worked on 2026-08-28 after stopping the foreground worker once with Ctrl+C and restarting it. User also confirmed the Chunk 8 manual cancel test worked on 2026-08-28: the message was not sent and `schedule:list` showed it was cancelled.
 
 ## Important Caveat
 
@@ -77,4 +80,6 @@ The scheduler can prevent normal duplicate sends in its own database logic, but 
 
 Chunk 6 deliberately treats unknown send failures as terminal by default. This favors avoiding possible duplicate sends over retrying an ambiguous result. The behavior is configurable for fake/test senders or future carefully classified provider errors.
 
-Chunk 7 still requires a manual E2E confirmation because automated tests do not connect to live WhatsApp or send real external messages.
+Chunk 7 manual E2E confirmation is complete. Automated tests still intentionally avoid connecting to live WhatsApp or sending external messages.
+
+Chunk 8 stale-processing recovery can retry a row that was stuck in `processing`, which fixes the crash-before-send case. It still cannot prove whether WhatsApp accepted a message immediately before a crash, so that known exactly-once hard case remains.

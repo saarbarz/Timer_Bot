@@ -12,8 +12,16 @@ export interface ScheduleCancelCliArgs {
   readonly id: string;
 }
 
+export interface ScheduleUpdateTimeCliArgs {
+  readonly id: string;
+  readonly at?: string;
+  readonly in?: string;
+  readonly timezone: string;
+}
+
 export interface ScheduleWorkerCliArgs {
   readonly pollMs: number;
+  readonly staleProcessingMs: number;
 }
 
 export type CliParseResult<T> =
@@ -72,18 +80,56 @@ export function parseScheduleCancelArgs(argv: readonly string[]): CliParseResult
   };
 }
 
+export function parseScheduleUpdateTimeArgs(argv: readonly string[]): CliParseResult<ScheduleUpdateTimeCliArgs> {
+  if (argv.length === 0 || argv[0]?.startsWith("--") === true) {
+    return {
+      success: false,
+      message: "Usage: npm.cmd run schedule:update-time -- <id> --at <YYYY-MM-DDTHH:mm[:ss]> [--timezone <IANA timezone>]"
+    };
+  }
+
+  const parsed = parseFlagValues(argv.slice(1), new Set(["--at", "--in", "--timezone"]));
+  if (!parsed.success) {
+    return parsed;
+  }
+
+  const at = parsed.value.values.get("--at");
+  const relative = parsed.value.values.get("--in");
+  const timezone = parsed.value.values.get("--timezone") ?? appConfig.defaultTimezone;
+
+  if (at === undefined && relative === undefined) {
+    return {
+      success: false,
+      message: "Use --at or --in to provide the new scheduled time."
+    };
+  }
+
+  if (at !== undefined && relative !== undefined) {
+    return {
+      success: false,
+      message: "Use either --at or --in, not both."
+    };
+  }
+
+  return {
+    success: true,
+    value: {
+      id: argv[0],
+      at,
+      in: relative,
+      timezone
+    }
+  };
+}
+
 export function parseScheduleWorkerArgs(argv: readonly string[]): CliParseResult<ScheduleWorkerCliArgs> {
-  const parsed = parseFlagValues(argv, new Set(["--poll-ms"]));
+  const parsed = parseFlagValues(argv, new Set(["--poll-ms", "--stale-processing-ms"]));
   if (!parsed.success) {
     return parsed;
   }
 
   const rawPollMs = parsed.value.values.get("--poll-ms");
-  if (rawPollMs === undefined) {
-    return { success: true, value: { pollMs: 5_000 } };
-  }
-
-  const pollMs = Number(rawPollMs);
+  const pollMs = rawPollMs === undefined ? 5_000 : Number(rawPollMs);
   if (!Number.isInteger(pollMs) || pollMs < 250) {
     return {
       success: false,
@@ -91,10 +137,22 @@ export function parseScheduleWorkerArgs(argv: readonly string[]): CliParseResult
     };
   }
 
-  return { success: true, value: { pollMs } };
+  const rawStaleProcessingMs = parsed.value.values.get("--stale-processing-ms");
+  const staleProcessingMs = rawStaleProcessingMs === undefined ? 10 * 60 * 1_000 : Number(rawStaleProcessingMs);
+  if (!Number.isInteger(staleProcessingMs) || staleProcessingMs < 1_000) {
+    return {
+      success: false,
+      message: "--stale-processing-ms must be an integer of at least 1000."
+    };
+  }
+
+  return { success: true, value: { pollMs, staleProcessingMs } };
 }
 
-export function resolveScheduledAtLocal(args: ScheduleCreateCliArgs, now = new Date()): CliParseResult<string> {
+export function resolveScheduledAtLocal(
+  args: Pick<ScheduleCreateCliArgs, "at" | "in" | "timezone">,
+  now = new Date()
+): CliParseResult<string> {
   if (args.at !== undefined) {
     return { success: true, value: args.at };
   }

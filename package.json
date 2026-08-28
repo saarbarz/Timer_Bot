@@ -14,6 +14,7 @@
     "schedule": "node --import tsx src/cli/schedule.ts",
     "schedule:list": "node --import tsx src/cli/scheduleList.ts",
     "schedule:cancel": "node --import tsx src/cli/scheduleCancel.ts",
+    "schedule:update-time": "node --import tsx src/cli/scheduleUpdateTime.ts",
     "schedule:worker": "node --import tsx src/cli/scheduleWorker.ts"
   },
   "engines": {

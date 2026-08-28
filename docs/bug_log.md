@@ -8,12 +8,12 @@ Track open and resolved bugs by chunk or version.
 
 ## Known Limitations
 
-- Chunk 6 does not recover stale `processing` rows after a process crash; this is reserved for Chunk 8.
 - True exactly-once WhatsApp delivery cannot be guaranteed if the provider accepts a message and the process crashes before SQLite records `sent`.
-- Chunk 7 live scheduled delivery still needs manual confirmation; automated tests intentionally do not connect to WhatsApp or send external messages.
+- Chunk 8 stale-processing recovery uses a timeout to recover crash-before-send rows, but it cannot distinguish that case from the known hard case where WhatsApp accepted a message immediately before the crash.
 
 ## Resolved Bugs
 
+- Chunk 8: `schedule:list` showed only canonical UTC fields like `scheduledAtUtc`, which looked three hours earlier than the user's Asia/Jerusalem scheduled time. Fixed by adding local display fields such as `scheduledAtLocal`, `sentAtLocal`, and `nextAttemptAtLocal` before the UTC audit fields.
 - Chunk 0: PowerShell blocks `npm.ps1`, but `npm.cmd` works. This is documented in `README.md`, `docs/project_state.md`, and `docs/implementation_log.md`.
 - Chunk 1: Initial attempt to chain npm install commands with `&&` failed because this PowerShell version rejected it. Re-ran the installs as separate commands.
 - Chunk 3: `creds.update` save errors are no longer fire-and-forget. The event handler now reports failures through a sanitized structured `whatsapp.credentials_save_failed` log event.

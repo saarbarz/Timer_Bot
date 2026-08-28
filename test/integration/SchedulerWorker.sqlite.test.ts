@@ -46,7 +46,14 @@ class FakeMessageSender implements MessageSender {
   });
 }
 
-const emptyRunResult = { claimed: 0, sent: 0, sendFailed: 0, retryScheduled: 0, failed: 0 } as const;
+const emptyRunResult = {
+  claimed: 0,
+  sent: 0,
+  sendFailed: 0,
+  retryScheduled: 0,
+  failed: 0,
+  recoveredStaleProcessing: 0
+} as const;
 
 const contexts: TestContext[] = [];
 
@@ -158,6 +165,121 @@ describe("SchedulerWorker SQLite integration", () => {
 
     expect(sender.send).toHaveBeenCalledOnce();
     expect(context.repository.findById(message.id)?.status).toBe("sent");
+  });
+
+  it("sends an overdue pending message once after the worker starts late", async () => {
+    const context = createContext("2026-08-27T08:59:00.000Z");
+    const message = createMessageDueAtNineUtc(context);
+    context.clock.set("2026-08-27T09:02:00.000Z");
+    const sender = new FakeMessageSender();
+    const restartedWorker = new SchedulerWorker(context.repository, sender, { clock: context.clock });
+
+    await expect(restartedWorker.runOnce()).resolves.toMatchObject({
+      claimed: 1,
+      sent: 1,
+      sendFailed: 0
+    });
+
+    const laterWorker = new SchedulerWorker(context.repository, sender, { clock: context.clock });
+    await expect(laterWorker.runOnce()).resolves.toEqual(emptyRunResult);
+    expect(sender.send).toHaveBeenCalledOnce();
+    expect(context.repository.findById(message.id)).toMatchObject({
+      status: "sent",
+      sentAtUtc: "2026-08-27T09:02:00.000Z"
+    });
+  });
+
+  it("does not send a message cancelled before its due time", async () => {
+    const context = createContext("2026-08-27T08:59:00.000Z");
+    const message = createMessageDueAtNineUtc(context);
+    context.service.cancel(message.id);
+    context.clock.set("2026-08-27T09:02:00.000Z");
+    const sender = new FakeMessageSender();
+    const worker = new SchedulerWorker(context.repository, sender, { clock: context.clock });
+
+    await expect(worker.runOnce()).resolves.toEqual(emptyRunResult);
+
+    expect(sender.send).not.toHaveBeenCalled();
+    expect(context.repository.findById(message.id)?.status).toBe("cancelled");
+  });
+
+  it("uses the updated scheduled time after a pending message is rescheduled", async () => {
+    const context = createContext("2026-08-27T08:59:00.000Z");
+    const message = createMessageDueAtNineUtc(context);
+    context.clock.set("2026-08-27T08:59:30.000Z");
+    context.service.updateTime(message.id, {
+      scheduledAtLocal: "2026-08-27T12:05",
+      timezone: "Asia/Jerusalem"
+    });
+    const sender = new FakeMessageSender();
+    const worker = new SchedulerWorker(context.repository, sender, { clock: context.clock });
+
+    context.clock.set("2026-08-27T09:00:00.000Z");
+    await expect(worker.runOnce()).resolves.toEqual(emptyRunResult);
+
+    context.clock.set("2026-08-27T09:05:00.000Z");
+    await expect(worker.runOnce()).resolves.toMatchObject({
+      claimed: 1,
+      sent: 1,
+      sendFailed: 0
+    });
+
+    expect(sender.send).toHaveBeenCalledOnce();
+    expect(context.repository.findById(message.id)).toMatchObject({
+      status: "sent",
+      scheduledAtUtc: "2026-08-27T09:05:00.000Z",
+      sentAtUtc: "2026-08-27T09:05:00.000Z"
+    });
+  });
+
+  it("recovers stale processing messages and sends them once", async () => {
+    const context = createContext("2026-08-27T08:59:00.000Z");
+    const message = createMessageDueAtNineUtc(context);
+    context.clock.set("2026-08-27T09:00:00.000Z");
+    expect(context.repository.claimNextDuePending(context.clock.now().toISOString())).toMatchObject({
+      id: message.id,
+      status: "processing"
+    });
+
+    context.clock.set("2026-08-27T09:10:00.000Z");
+    const sender = new FakeMessageSender();
+    const restartedWorker = new SchedulerWorker(context.repository, sender, {
+      clock: context.clock,
+      staleProcessingMs: 10 * 60 * 1_000
+    });
+
+    await expect(restartedWorker.runOnce()).resolves.toMatchObject({
+      recoveredStaleProcessing: 1,
+      claimed: 1,
+      sent: 1,
+      sendFailed: 0
+    });
+
+    await expect(restartedWorker.runOnce()).resolves.toEqual(emptyRunResult);
+    expect(sender.send).toHaveBeenCalledOnce();
+    expect(context.repository.findById(message.id)).toMatchObject({
+      status: "sent",
+      attempts: 1,
+      sentAtUtc: "2026-08-27T09:10:00.000Z"
+    });
+  });
+
+  it("does not recover fresh processing messages", async () => {
+    const context = createContext("2026-08-27T08:59:00.000Z");
+    const message = createMessageDueAtNineUtc(context);
+    context.clock.set("2026-08-27T09:00:00.000Z");
+    context.repository.claimNextDuePending(context.clock.now().toISOString());
+    context.clock.set("2026-08-27T09:09:59.000Z");
+    const sender = new FakeMessageSender();
+    const worker = new SchedulerWorker(context.repository, sender, {
+      clock: context.clock,
+      staleProcessingMs: 10 * 60 * 1_000
+    });
+
+    await expect(worker.runOnce()).resolves.toEqual(emptyRunResult);
+
+    expect(sender.send).not.toHaveBeenCalled();
+    expect(context.repository.findById(message.id)?.status).toBe("processing");
   });
 
   it("schedules retryable failures with backoff and does not reclaim before next attempt", async () => {
