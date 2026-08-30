@@ -26,13 +26,14 @@ npm.cmd run schedule:cancel -- <id>
 npm.cmd run schedule:update-time -- <id> --in 90s --timezone <IANA timezone>
 npm.cmd run schedule:worker
 npm.cmd run web
+npm.cmd run service
 ```
 
 The npm scripts invoke TypeScript through `node --import tsx` for reliable process exit behavior on this Windows setup.
 
 ## Current Scope
 
-The project has completed Chunk 10: Recipient UX. It can reuse the saved WhatsApp linked-device session, send one explicit text message, create/list/cancel/reschedule messages in SQLite, run a deterministic scheduler worker against a fakeable sender, apply bounded retry/terminal failure handling, run a process-mode scheduler worker wired to the real Baileys adapter, recover stale `processing` rows, serve a local browser UI with a thin HTTP API over the existing scheduling services, and show optional recent recipient suggestions when Baileys supplies chat/contact data. The next allowed chunk is Chunk 11.
+The project has completed Chunk 11: Single-user Deployment. It can reuse the saved WhatsApp linked-device session, send one explicit text message, create/list/cancel/reschedule messages in SQLite, run a deterministic scheduler worker against a fakeable sender, apply bounded retry/terminal failure handling, run a process-mode scheduler worker wired to the real Baileys adapter, recover stale `processing` rows, serve a local browser UI with a thin HTTP API over the existing scheduling services, show optional recent recipient suggestions when Baileys supplies chat/contact data, and run a single long-lived local service that shares one WhatsApp adapter between UI and worker polling. The next allowed chunk is Chunk 12.
 
 Post-Chunk 5 bug-hunt fixes are also complete: the startup entry point now prints correctly on Windows, `wa:send` validates invalid input before loading or connecting WhatsApp transport, and safe smoke commands have been reverified.
 
@@ -148,4 +149,30 @@ http://127.0.0.1:3000
 
 The web UI supports WhatsApp connection status, QR display for linking, schedule creation, message listing, pending-message text/time edits, pending-message cancellation, and optional recent recipient suggestions. Manual phone-number entry always remains available, even if no recent recipients are loaded. It is a local single-user UI only; it does not add accounts, billing, cloud hosting, or multi-user behavior.
 
-Until a later service/worker chunk unifies long-running behavior, avoid opening the web UI WhatsApp connection at the same time as `schedule:worker`. They are separate Baileys processes using the same local `auth/` session and can cause a `needs_relink` / `not_connected` failure.
+If you use `npm.cmd run web` and `npm.cmd run schedule:worker` separately, avoid opening the web UI WhatsApp connection at the same time as the worker. Those commands are separate Baileys processes using the same local `auth/` session and can cause a `needs_relink` / `not_connected` failure.
+
+## Chunk 11 Single-user Service
+
+For 24/7 single-user local usage, prefer the combined service:
+
+```powershell
+npm.cmd run service
+```
+
+It serves the UI/API and runs scheduler polling in one process with one shared WhatsApp adapter. The service opens SQLite and runs migrations before worker polling starts. It exposes a privacy-safe health endpoint:
+
+```text
+http://127.0.0.1:3000/health
+```
+
+Docker packaging is available through `Dockerfile`. The container expects persistent volumes for:
+
+- `/app/data` for SQLite.
+- `/app/auth` for WhatsApp linked-device auth state.
+
+Example:
+
+```powershell
+docker build -t timer-bot .
+docker run --restart unless-stopped -p 3000:3000 -v timer-bot-data:/app/data -v timer-bot-auth:/app/auth timer-bot
+```

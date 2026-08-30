@@ -835,3 +835,63 @@ Status: completed.
 - Recipient suggestions are in memory only and are not persisted across web server restarts.
 - Only individual phone-number JIDs are accepted. Groups and arbitrary JIDs remain unsupported.
 - The web UI WhatsApp connection and `schedule:worker` are still separate processes until a later service/worker chunk. Do not use both WhatsApp connection paths at once with the same `auth/` session.
+
+## Chunk 11 - Single-user Deployment
+
+Status: completed.
+
+### Scope
+
+- Package the proven single-user app for a long-running local/container process.
+- Add a combined service that serves the local UI/API and runs scheduler polling with one shared WhatsApp adapter.
+- Add a privacy-safe health endpoint with process, database, and WhatsApp state.
+- Ensure SQLite migrations run before worker polling starts.
+- Preserve restart-safe behavior for already-sent messages.
+- Add Docker packaging with persistent SQLite and auth volumes.
+- Do not add Kubernetes, multi-user infrastructure, serverless deployment, accounts, or cloud hosting.
+
+### Files Changed
+
+- `.dockerignore`: excludes generated local state, dependencies, git metadata, IDE files, logs, and env files from Docker context.
+- `Dockerfile`: added a Node service image running `npm run service`, with `/app/data` and `/app/auth` volumes and a `/health` healthcheck.
+- `package.json`: added `service` script.
+- `src/config/AppConfig.ts`: added service poll interval and bind host config.
+- `src/server/ConnectionController.ts`: added a managed Baileys controller factory that exposes the shared adapter and connection controller.
+- `src/server/HealthStatus.ts`: added privacy-safe health status generation.
+- `src/server/LocalWebServer.ts`: added `GET /health`.
+- `src/server/SingleUserService.ts`: added combined long-running service runtime with startup DB migration, web server, scheduler polling, shared adapter, and graceful stop.
+- `src/server/startSingleUserService.ts`: added `npm.cmd run service` entry point.
+- `test/integration/SingleUserService.test.ts`: added service restart, health, migration, and no-duplicate-sent coverage with a fake WhatsApp adapter.
+- `README.md`, `docs/project_state.md`, `docs/file_guide.md`, `docs/bug_log.md`, and `docs/implementation_log.md`: updated for Chunk 11.
+
+### Commands Run
+
+- Extracted the Chunk 11 section from `docs/WhatsApp_Send_Later_Codex_Implementation_Plan_HE.docx`.
+- `npm.cmd run typecheck` -> passed.
+- `npm.cmd test` -> passed; 15 test files, 70 tests.
+- `npm.cmd run build` -> passed.
+- `docker --version` -> `Docker version 29.4.3, build 055a478`.
+- `docker build -t timer-bot:chunk11-smoke .` -> could not start because Docker Desktop/Linux engine was not running: Docker API pipe `dockerDesktopLinuxEngine` was unavailable.
+
+### Verification
+
+- Typecheck passed.
+- Build passed.
+- Unit and integration tests passed:
+  - service startup opens SQLite and applies migrations before worker polling is available.
+  - `/health` reports process liveness, DB reachability/migration state, and WhatsApp `connected`/`degraded`/`needs_relink` state without leaking phone numbers, JIDs, QR, auth/session data, or message text.
+  - process-style restart preserves SQLite data through the same database path.
+  - restarting the combined service does not resend a row already marked `sent`.
+  - existing scheduling, retry, stale recovery, web API, recipient option, and WhatsApp adapter tests still pass.
+
+### Manual Test
+
+- No live WhatsApp QR, connection, contact sync, or message delivery test was performed for Chunk 11.
+- Docker image build was not completed because the local Docker engine was not running.
+
+### Known Limitations
+
+- The combined service is still a single-user local/container deployment, not SaaS or multi-user infrastructure.
+- Docker volume persistence is implemented by the image contract, but a real container restart smoke still requires Docker Desktop/Linux engine to be running.
+- Health treats WhatsApp `degraded` or `needs_relink` as reportable app state, not a reason to fail the process healthcheck, because restarting the process does not fix a required QR/relink action.
+- The older separate `npm.cmd run web` and `npm.cmd run schedule:worker` commands still exist; prefer `npm.cmd run service` for long-running use to avoid competing Baileys connections.

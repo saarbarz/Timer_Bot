@@ -2,9 +2,9 @@
 
 ## Current Position
 
-- Current chunk: Chunk 10 - Recipient UX is complete.
-- Last completed chunk: Chunk 10 - Recipient UX.
-- Next allowed chunk: Chunk 11.
+- Current chunk: Chunk 11 - Single-user Deployment is complete.
+- Last completed chunk: Chunk 11 - Single-user Deployment.
+- Next allowed chunk: Chunk 12.
 - WhatsApp code status: Baileys connection adapter exists, manual QR/device linking was confirmed, one-shot text sending behind `WhatsAppAdapter` was confirmed by real manual send tests, scheduled WhatsApp delivery was confirmed by real manual test, and reconnect lifecycle lives in `ConnectionManager`.
 
 ## Environment
@@ -64,6 +64,11 @@
 - Chunk 10 inspected installed Baileys events and found `messaging-history.set`, `chats.upsert`, `chats.update`, `contacts.upsert`, and `contacts.update` available for optional recipient suggestions.
 - Recent recipient options are kept in memory inside the Baileys-backed adapter, deduped by individual `@s.whatsapp.net` JID, and exposed to the local UI through `/api/recipients`.
 - Recipient suggestions are optional; manual phone-number entry remains the scheduling fallback when no chat/contact data is available.
+- Chunk 11 adds `npm.cmd run service`, a single long-lived process that serves the local UI/API and runs scheduler polling with one shared WhatsApp adapter.
+- The service opens SQLite and runs migrations before constructing worker polling.
+- The service skips worker sends unless WhatsApp status is `connected`; degraded or relink-required states are reported through health instead of sending.
+- `/health` reports process liveness, DB reachability/migration state, and collapsed WhatsApp state without phone numbers, QR payloads, session data, message text, or auth details.
+- Docker packaging uses `/app/data` and `/app/auth` as persistent volumes and runs the combined service with `BIND_HOST=0.0.0.0`.
 - `src/index.ts` uses `pathToFileURL` for direct-execution detection so startup smoke output works with Windows paths.
 
 ## Resume Instructions
@@ -82,6 +87,7 @@
 12. Chunk 8 automated implementation is complete and verified by tests/build/safe CLI smoke. User confirmed the Chunk 8 manual restart test worked on 2026-08-28 after stopping the foreground worker once with Ctrl+C and restarting it. User also confirmed the Chunk 8 manual cancel test worked on 2026-08-28: the message was not sent and `schedule:list` showed it was cancelled.
 13. Chunk 9 local web UI is complete and verified by API tests, UI smoke, typecheck, tests, build, and a localhost server smoke.
 14. Chunk 10 recipient UX is complete and verified by mapper tests, local web API tests, typecheck, full test suite, and build.
+15. Chunk 11 single-user deployment is complete and verified by typecheck, full test suite, build, health redaction coverage, process-style restart persistence coverage, and no-duplicate-sent restart coverage. Docker CLI was present, but Docker Desktop/Linux engine was not running, so image build smoke could not start.
 
 ## Important Caveat
 
@@ -93,4 +99,4 @@ Chunk 7 manual E2E confirmation is complete. Automated tests still intentionally
 
 Chunk 8 stale-processing recovery can retry a row that was stuck in `processing`, which fixes the crash-before-send case. It still cannot prove whether WhatsApp accepted a message immediately before a crash, so that known exactly-once hard case remains.
 
-Until the later long-running service/worker chunk, `npm.cmd run web` and `npm.cmd run schedule:worker` each create their own Baileys adapter if their WhatsApp connection paths are used. Do not use the web UI WhatsApp connect button while the foreground worker is connected with the same `auth/` session.
+The combined `npm.cmd run service` command should be preferred for long-running single-user usage because it shares one Baileys adapter between UI and worker polling. If using the older separate `npm.cmd run web` and `npm.cmd run schedule:worker` commands, do not use both WhatsApp connection paths at once with the same `auth/` session.

@@ -1,0 +1,13 @@
+auth
+auth_old
+data
+dist
+logs
+node_modules
+.git
+.idea
+.venv
+*.iml
+*.log
+.env
+.env.*

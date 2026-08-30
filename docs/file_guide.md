@@ -5,6 +5,8 @@
 - `package.json`: npm scripts, project metadata, runtime dependencies, and development dependencies.
 - `tsconfig.json`: strict TypeScript compiler configuration.
 - `.gitignore`: excludes dependencies, build output, local environment files, WhatsApp auth/session state including `auth_old/`, local data, logs, and IDE metadata.
+- `.dockerignore`: excludes local/generated state and development metadata from Docker build context.
+- `Dockerfile`: single-user long-running service image with persistent `/app/data` and `/app/auth` volumes and a privacy-safe healthcheck.
 - `README.md`: setup and command reference.
 
 ## Source
@@ -19,7 +21,7 @@
 - `src/cli/scheduleUpdateTime.ts`: reschedules one pending scheduled message using an absolute or relative time.
 - `src/cli/scheduleWorker.ts`: process-mode scheduler that connects to WhatsApp and polls SQLite for due messages to send.
 - `src/cli/waitForConnected.ts`: shared helper for waiting until a WhatsApp adapter reports `connected` or `needs_relink`.
-- `src/config/AppConfig.ts`: local configuration for default timezone and generated local paths. It contains no credentials.
+- `src/config/AppConfig.ts`: local configuration for default timezone, generated local paths, web/service ports, bind host, and service poll interval. It contains no credentials.
 - `src/domain/Clock.ts`: injectable clock abstraction for deterministic scheduling tests.
 - `src/domain/ScheduledMessage.ts`: scheduled message status values and domain shape, including optional `nextAttemptAtUtc` retry timing.
 - `src/domain/ScheduleService.ts`: scheduling CRUD service that validates recipient/text/time, converts local time to UTC, creates pending messages, lists messages, updates pending times, and cancels pending messages.
@@ -35,10 +37,13 @@
 - `src/db/migrations/002_add_next_attempt_at.ts`: adds `next_attempt_at_utc` and updates the due-message index for retry scheduling.
 - `src/cli/waConnect.ts`: manual CLI for opening a Baileys WhatsApp connection and showing the linked-device QR.
 - `src/cli/waSend.ts`: manual one-shot CLI for validating a send request, lazy-loading the Baileys adapter only after validation passes, connecting to WhatsApp, and sending one text message to an explicit phone-number recipient.
-- `src/server/ConnectionController.ts`: in-memory connection/QR/recipient controller for the local web server, backed by `BaileysWhatsAppAdapter` in production and fakeable in tests.
-- `src/server/LocalWebServer.ts`: localhost HTTP request handler and server factory with JSON API routes over `ScheduleService`, connection status, QR display, and optional recipient suggestions.
+- `src/server/ConnectionController.ts`: in-memory connection/QR/recipient controller for the local web server, backed by `BaileysWhatsAppAdapter` in production and able to expose the managed adapter for the combined service.
+- `src/server/HealthStatus.ts`: privacy-safe health report builder for process liveness, DB reachability/migration state, and collapsed WhatsApp connection state.
+- `src/server/LocalWebServer.ts`: localhost HTTP request handler and server factory with JSON API routes over `ScheduleService`, connection status, QR display, optional recipient suggestions, and `/health`.
 - `src/server/localWebUiHtml.ts`: minimal local browser UI for connection status, QR display, schedule creation with optional recent recipient suggestions, listing, pending edits, and cancellation.
+- `src/server/SingleUserService.ts`: long-running single-user service runtime that opens/migrates SQLite, serves the local web UI/API, and polls the scheduler worker with one shared WhatsApp adapter.
 - `src/server/startLocalWebServer.ts`: `npm.cmd run web` entry point.
+- `src/server/startSingleUserService.ts`: `npm.cmd run service` entry point with graceful shutdown.
 - `src/whatsapp/WhatsAppAdapter.ts`: transport interface, recipient option shape, and internal send result types that future scheduler code must depend on instead of Baileys directly.
 - `src/whatsapp/BaileysConnectionState.ts`: pure mapping from Baileys connection updates to internal connection statuses.
 - `src/whatsapp/ConnectionManager.ts`: centralized lifecycle manager for connection status, bounded reconnect backoff, timer cancellation, and shutdown.
@@ -53,6 +58,7 @@
 - `test/integration/ScheduleService.sqlite.test.ts`: Chunk 4 integration tests against temporary SQLite databases for migrations, create/list/update/cancel rules, persistence after reopen, and timezone conversion.
 - `test/integration/SchedulerWorker.sqlite.test.ts`: Chunk 5 through Chunk 8 integration tests for due-message claiming, future/cancelled exclusion, successful sent marking, no duplicate sends, overdue restart behavior, cancelled-message exclusion, reschedule timing, stale-processing recovery, retry backoff, terminal failure, max attempts, recovery after retry, retry metadata cleanup, and migrating an existing Chunk 4 database.
 - `test/integration/LocalWebServer.test.ts`: Chunk 9 and Chunk 10 API/local UI smoke tests against a temporary SQLite database and fake connection controller, including optional recipient suggestions and manual fallback.
+- `test/integration/SingleUserService.test.ts`: Chunk 11 service tests for startup migration, health redaction, process-style restart persistence, and no duplicate send after a sent row is restarted.
 - `test/unit/BaileysConnectionState.test.ts`: Chunk 1 connection status transition tests.
 - `test/unit/BaileysReconnect.test.ts`: reconnect decision tests, including relink-required Baileys close codes.
 - `test/unit/BaileysEventHandlers.test.ts`: tests for event handler registration, credential save callback wiring, QR forwarding, and credential-save error reporting.

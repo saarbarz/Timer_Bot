@@ -8,6 +8,7 @@ import type { ScheduledMessage } from "../domain/ScheduledMessage.js";
 import { ScheduleError, ScheduleService } from "../domain/ScheduleService.js";
 import { formatUtcIsoInZone } from "../cli/scheduleListFormat.js";
 import type { ConnectionController } from "./ConnectionController.js";
+import { getHealthStatus } from "./HealthStatus.js";
 import { localWebUiHtml } from "./localWebUiHtml.js";
 import type { RecipientOption } from "../whatsapp/WhatsAppAdapter.js";
 
@@ -50,6 +51,15 @@ async function routeRequest(
 
   if (method === "GET" && url.pathname === "/") {
     sendHtml(response, localWebUiHtml);
+    return;
+  }
+
+  if (method === "GET" && url.pathname === "/health") {
+    const health = getHealthStatus({
+      databasePath: options.databasePath,
+      connection: options.connection
+    });
+    sendJson(response, health.ok ? 200 : 503, health);
     return;
   }
 

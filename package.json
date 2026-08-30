@@ -16,7 +16,8 @@
     "schedule:cancel": "node --import tsx src/cli/scheduleCancel.ts",
     "schedule:update-time": "node --import tsx src/cli/scheduleUpdateTime.ts",
     "schedule:worker": "node --import tsx src/cli/scheduleWorker.ts",
-    "web": "node --import tsx src/server/startLocalWebServer.ts"
+    "web": "node --import tsx src/server/startLocalWebServer.ts",
+    "service": "node --import tsx src/server/startSingleUserService.ts"
   },
   "engines": {
     "node": ">=20"
