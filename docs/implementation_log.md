@@ -895,3 +895,29 @@ Status: completed.
 - Docker volume persistence is implemented by the image contract, but a real container restart smoke still requires Docker Desktop/Linux engine to be running.
 - Health treats WhatsApp `degraded` or `needs_relink` as reportable app state, not a reason to fail the process healthcheck, because restarting the process does not fix a required QR/relink action.
 - The older separate `npm.cmd run web` and `npm.cmd run schedule:worker` commands still exist; prefer `npm.cmd run service` for long-running use to avoid competing Baileys connections.
+
+## Post-Chunk 11 Bug Fix - Occupied Service Port
+
+Status: completed.
+
+### Root Cause
+
+- A browser-created scheduled message did not send after attempting to use `npm.cmd run service` because `127.0.0.1:3000` was still occupied by an older `npm.cmd run web` process.
+- The service process failed with `EADDRINUSE`, so the browser continued talking to the web-only process, which does not run scheduler polling.
+
+### Files Changed
+
+- `src/server/SingleUserService.ts`: service startup now rejects listen errors cleanly and closes the opened SQLite DB if the HTTP server cannot bind.
+- `src/server/startSingleUserService.ts`: CLI entry point now prints an actionable occupied-port message for `EADDRINUSE`.
+- `test/integration/SingleUserService.test.ts`: added regression coverage for clean occupied-port rejection.
+- `docs/bug_log.md` and `docs/implementation_log.md`: documented the resolved bug.
+
+### Commands Run
+
+- `npm.cmd run typecheck` -> passed.
+- `npm.cmd test -- test/integration/SingleUserService.test.ts` -> passed; 1 test file, 3 tests.
+
+### Verification
+
+- The service startup path no longer emits an unhandled server error for occupied ports.
+- The regression test proves a second service on an already-used port rejects with `EADDRINUSE`.

@@ -64,9 +64,12 @@ export async function startSingleUserService(options: SingleUserServiceOptions):
     }
   };
 
-  await new Promise<void>((resolve) => {
-    server.listen(options.port ?? appConfig.webPort, options.host ?? appConfig.serviceBindHost, resolve);
-  });
+  try {
+    await listen(server, options.port ?? appConfig.webPort, options.host ?? appConfig.serviceBindHost);
+  } catch (error: unknown) {
+    db.close();
+    throw error;
+  }
 
   if (options.connectOnStart ?? true) {
     void options.connection.connect().catch((error: unknown) => {
@@ -98,6 +101,23 @@ export async function startSingleUserService(options: SingleUserServiceOptions):
       db.close();
     }
   };
+}
+
+function listen(server: http.Server, port: number, host: string): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const onError = (error: Error): void => {
+      server.off("listening", onListening);
+      reject(error);
+    };
+    const onListening = (): void => {
+      server.off("error", onError);
+      resolve();
+    };
+
+    server.once("error", onError);
+    server.once("listening", onListening);
+    server.listen(port, host);
+  });
 }
 
 function formatWorkerResult(result: Awaited<ReturnType<SchedulerWorker["runOnce"]>>): string {

@@ -151,6 +151,36 @@ describe("Single-user service", () => {
     expect(secondAdapter.sentMessages).toEqual([]);
     expect(readMessageStatus(context.dbPath, "restart-test-1")).toBe("sent");
   });
+
+  it("rejects cleanly when the service port is already in use", async () => {
+    const firstContext = createContext();
+    const firstAdapter = new FakeWhatsAppAdapter("idle");
+    firstContext.service = await startSingleUserService({
+      adapter: firstAdapter,
+      connection: new FakeConnectionController(firstAdapter),
+      databasePath: firstContext.dbPath,
+      port: 0,
+      connectOnStart: false
+    });
+
+    const address = firstContext.service.server.address();
+    if (address === null || typeof address === "string") {
+      throw new Error("Expected service to listen on TCP.");
+    }
+
+    const secondContext = createContext();
+    const secondAdapter = new FakeWhatsAppAdapter("idle");
+    await expect(
+      startSingleUserService({
+        adapter: secondAdapter,
+        connection: new FakeConnectionController(secondAdapter),
+        databasePath: secondContext.dbPath,
+        host: "127.0.0.1",
+        port: address.port,
+        connectOnStart: false
+      })
+    ).rejects.toMatchObject({ code: "EADDRINUSE" });
+  });
 });
 
 function createContext(): TestContext {

@@ -15,6 +15,7 @@ Track open and resolved bugs by chunk or version.
 
 ## Resolved Bugs
 
+- Post-Chunk 11: scheduled messages created through the browser did not send after attempting to run `npm.cmd run service` because an older `npm.cmd run web` process was still bound to `127.0.0.1:3000`. Root cause was that service startup hit `EADDRINUSE`, while the browser kept talking to the old web-only process, which has no scheduler worker. Fixed by making service startup reject cleanly on listen errors, close the opened DB, and print an actionable occupied-port message.
 - Chunk 8: `schedule:list` showed only canonical UTC fields like `scheduledAtUtc`, which looked three hours earlier than the user's Asia/Jerusalem scheduled time. Fixed by adding local display fields such as `scheduledAtLocal`, `sentAtLocal`, and `nextAttemptAtLocal` before the UTC audit fields.
 - Chunk 0: PowerShell blocks `npm.ps1`, but `npm.cmd` works. This is documented in `README.md`, `docs/project_state.md`, and `docs/implementation_log.md`.
 - Chunk 1: Initial attempt to chain npm install commands with `&&` failed because this PowerShell version rejected it. Re-ran the installs as separate commands.
