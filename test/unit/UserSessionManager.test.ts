@@ -7,6 +7,7 @@ import { UserSessionManager, type UserSession } from "../../src/server/UserSessi
 import type {
   NormalizedRecipient,
   RecipientOption,
+  RecipientOptionStats,
   SendResult,
   WhatsAppAdapter,
   WhatsAppConnectionStatus
@@ -20,6 +21,15 @@ class FakeAdapter implements WhatsAppAdapter {
   }
   getRecipientOptions(): RecipientOption[] {
     return [];
+  }
+  getRecipientStats(): RecipientOptionStats {
+    return {
+      contactsSeen: 0,
+      chatsSeen: 0,
+      messagesSeen: 0,
+      lidMappingsSeen: 0,
+      mappedRecipients: 0
+    };
   }
   async sendText(_recipient: NormalizedRecipient, _text: string): Promise<SendResult> {
     return { success: true };
@@ -40,6 +50,15 @@ class FakeConnection implements ConnectionController {
   }
   getRecipientOptions(): RecipientOption[] {
     return [];
+  }
+  getRecipientStats(): RecipientOptionStats {
+    return {
+      contactsSeen: 0,
+      chatsSeen: 0,
+      messagesSeen: 0,
+      lidMappingsSeen: 0,
+      mappedRecipients: 0
+    };
   }
 }
 

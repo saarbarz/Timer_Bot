@@ -77,7 +77,9 @@ async function routeRequest(
     const connection = resolveConnection(options, resolveUserId(url, undefined, options));
     sendJson(response, 200, {
       status: connection?.getStatus() ?? "idle",
-      qrAvailable: connection?.getQrTerminal() !== undefined
+      qrAvailable: connection?.getQrTerminal() !== undefined,
+      recipientCount: connection?.getRecipientOptions().length ?? 0,
+      recipientStats: connection?.getRecipientStats() ?? emptyRecipientStats()
     });
     return;
   }
@@ -87,7 +89,9 @@ async function routeRequest(
     await connection?.connect();
     sendJson(response, 200, {
       status: connection?.getStatus() ?? "idle",
-      qrAvailable: connection?.getQrTerminal() !== undefined
+      qrAvailable: connection?.getQrTerminal() !== undefined,
+      recipientCount: connection?.getRecipientOptions().length ?? 0,
+      recipientStats: connection?.getRecipientStats() ?? emptyRecipientStats()
     });
     return;
   }
@@ -102,9 +106,18 @@ async function routeRequest(
   }
 
   if (method === "GET" && url.pathname === "/api/recipients") {
-    const connection = resolveConnection(options, resolveUserId(url, undefined, options));
+    const userId = resolveUserId(url, undefined, options);
+    const connection = resolveConnection(options, userId);
+    const connectionRecipients = connection?.getRecipientOptions() ?? [];
+    const scheduledRecipients = listScheduledRecipientOptions(options, userId);
+    const recipients = mergeRecipientOptions(connectionRecipients, scheduledRecipients);
     sendJson(response, 200, {
-      recipients: connection?.getRecipientOptions().map(toApiRecipientOption) ?? []
+      recipients: recipients.map(toApiRecipientOption),
+      stats: {
+        ...(connection?.getRecipientStats() ?? emptyRecipientStats()),
+        scheduledFallbackCount: scheduledRecipients.length,
+        totalRecipients: recipients.length
+      }
     });
     return;
   }
@@ -218,6 +231,47 @@ function resolveConnection(options: LocalWebServerOptions, userId: string): Conn
   return options.sessionManager?.get(userId).connection ?? options.connection;
 }
 
+function listScheduledRecipientOptions(options: LocalWebServerOptions, userId: string): RecipientOption[] {
+  const db = openAppDatabase(options.databasePath);
+  try {
+    const repository = new ScheduledMessageRepository(db);
+    const optionsByJid = new Map<string, RecipientOption>();
+    for (const message of repository.list(userId)) {
+      if (!optionsByJid.has(message.recipientJid)) {
+        optionsByJid.set(message.recipientJid, {
+          displayName: "Previously scheduled",
+          recipient: {
+            phoneNumber: message.recipient,
+            jid: message.recipientJid
+          },
+          source: "scheduled",
+          lastSeenAtUtc: message.updatedAtUtc
+        });
+      }
+    }
+
+    return Array.from(optionsByJid.values()).sort(compareRecipientOptions);
+  } finally {
+    db.close();
+  }
+}
+
+function mergeRecipientOptions(
+  connectionRecipients: readonly RecipientOption[],
+  scheduledRecipients: readonly RecipientOption[]
+): RecipientOption[] {
+  const optionsByJid = new Map<string, RecipientOption>();
+  for (const option of scheduledRecipients) {
+    optionsByJid.set(option.recipient.jid, option);
+  }
+
+  for (const option of connectionRecipients) {
+    optionsByJid.set(option.recipient.jid, option);
+  }
+
+  return Array.from(optionsByJid.values()).sort(compareRecipientOptions).slice(0, 20);
+}
+
 function resolveUserId(
   url: URL,
   body: Readonly<Record<string, unknown>> | undefined,
@@ -269,6 +323,32 @@ function toApiRecipientOption(option: RecipientOption): Record<string, unknown> 
     source: option.source,
     lastSeenAtUtc: option.lastSeenAtUtc
   };
+}
+
+function emptyRecipientStats() {
+  return {
+    contactsSeen: 0,
+    chatsSeen: 0,
+    messagesSeen: 0,
+    lidMappingsSeen: 0,
+    mappedRecipients: 0,
+    scheduledFallbackCount: 0,
+    totalRecipients: 0
+  };
+}
+
+function compareRecipientOptions(left: RecipientOption, right: RecipientOption): number {
+  const leftTime = left.lastSeenAtUtc ?? "";
+  const rightTime = right.lastSeenAtUtc ?? "";
+  if (leftTime !== rightTime) {
+    return rightTime.localeCompare(leftTime);
+  }
+
+  if (left.source !== right.source) {
+    return left.source.localeCompare(right.source);
+  }
+
+  return left.displayName.localeCompare(right.displayName);
 }
 
 function scheduleErrorStatus(error: ScheduleError): number {

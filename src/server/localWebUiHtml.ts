@@ -81,6 +81,11 @@ export const localWebUiHtml = String.raw`<!doctype html>
         white-space: nowrap;
       }
 
+      .status-details {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
       .user-select {
         display: flex;
         align-items: center;
@@ -122,6 +127,7 @@ export const localWebUiHtml = String.raw`<!doctype html>
       }
 
       label {
+        position: relative;
         display: grid;
         gap: 6px;
         color: var(--muted);
@@ -229,6 +235,26 @@ export const localWebUiHtml = String.raw`<!doctype html>
         font-size: 12px;
       }
 
+      .recipient-picker {
+        margin-top: 6px;
+      }
+
+      .recipient-picker select {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 9px 10px;
+        color: var(--ink);
+        background: var(--surface);
+        font: inherit;
+      }
+
+      .send-at-grid {
+        display: grid;
+        grid-template-columns: 1fr 120px;
+        gap: 8px;
+      }
+
       @media (max-width: 860px) {
         form,
         .toolbar,
@@ -246,6 +272,10 @@ export const localWebUiHtml = String.raw`<!doctype html>
           white-space: normal;
         }
 
+        .send-at-grid {
+          grid-template-columns: 1fr;
+        }
+
         .actions {
           justify-content: flex-start;
           flex-wrap: wrap;
@@ -261,7 +291,10 @@ export const localWebUiHtml = String.raw`<!doctype html>
           <label for="userSelect">Local user</label>
           <select id="userSelect"></select>
         </div>
-        <div class="status"><span id="statusDot" class="dot"></span><span id="connectionStatus">idle</span></div>
+        <div>
+          <div class="status"><span id="statusDot" class="dot"></span><span id="connectionStatus">idle</span></div>
+          <div id="recipientCount" class="status-details">recipients: 0</div>
+        </div>
       </div>
     </header>
     <main class="wrap">
@@ -279,12 +312,22 @@ export const localWebUiHtml = String.raw`<!doctype html>
         <form id="scheduleForm">
           <label>
             Recipient
-            <input name="recipient" placeholder="972501234567" autocomplete="off" list="recipientOptions" />
-            <datalist id="recipientOptions"></datalist>
+            <input name="recipient" placeholder="972501234567" autocomplete="off" inputmode="tel" />
             <span id="recipientHint" class="hint"></span>
+            <span class="recipient-picker">
+              <select id="recipientSelect" aria-label="Recent recipients from WhatsApp">
+                <option value="">Recent recipients from WhatsApp</option>
+              </select>
+            </span>
           </label>
           <label>Message<textarea name="text" placeholder="Message text"></textarea></label>
-          <label>Send At<input name="scheduledAtLocal" type="datetime-local" step="1" /></label>
+          <label>
+            Send At
+            <span class="send-at-grid">
+              <input name="scheduledDate" type="date" aria-label="Send date" />
+              <input name="scheduledTime" type="time" step="60" aria-label="Send time" />
+            </span>
+          </label>
           <label>Timezone<input name="timezone" value="Asia/Jerusalem" /></label>
           <button type="submit">Schedule</button>
         </form>
@@ -299,12 +342,13 @@ export const localWebUiHtml = String.raw`<!doctype html>
     <script>
       const statusDot = document.querySelector("#statusDot");
       const connectionStatus = document.querySelector("#connectionStatus");
+      const recipientCount = document.querySelector("#recipientCount");
       const qr = document.querySelector("#qr");
       const notice = document.querySelector("#notice");
       const messages = document.querySelector("#messages");
       const scheduleForm = document.querySelector("#scheduleForm");
       const recipientInput = scheduleForm.elements.recipient;
-      const recipientOptions = document.querySelector("#recipientOptions");
+      const recipientSelect = document.querySelector("#recipientSelect");
       const recipientHint = document.querySelector("#recipientHint");
       const userSelect = document.querySelector("#userSelect");
       let recipientOptionsSignature = "";
@@ -312,7 +356,15 @@ export const localWebUiHtml = String.raw`<!doctype html>
       document.querySelector("#connectButton").addEventListener("click", connectWhatsApp);
       document.querySelector("#refreshConnectionButton").addEventListener("click", refreshConnection);
       scheduleForm.addEventListener("submit", scheduleMessage);
+      recipientSelect.addEventListener("change", () => {
+        if (recipientSelect.value) {
+          recipientInput.value = recipientSelect.value;
+          recipientInput.focus();
+        }
+      });
       userSelect.addEventListener("change", async () => {
+        recipientOptionsSignature = "";
+        renderRecipientSelect([]);
         await refreshConnection();
         await refreshMessages();
       });
@@ -341,6 +393,7 @@ export const localWebUiHtml = String.raw`<!doctype html>
       async function refreshConnection() {
         const status = await api(userPath("/api/connection"));
         connectionStatus.textContent = status.status;
+        recipientCount.textContent = formatRecipientStats(status.recipientStats);
         statusDot.className = "dot " + status.status;
         await refreshRecipients();
 
@@ -362,11 +415,16 @@ export const localWebUiHtml = String.raw`<!doctype html>
           recipient.source,
           recipient.lastSeenAtUtc
         ]));
-        if (document.activeElement !== recipientInput && nextSignature !== recipientOptionsSignature) {
-          recipientOptions.replaceChildren(...response.recipients.map(renderRecipientOption));
+        const hasLoadedRecipientOptions = recipientOptionsSignature !== "";
+        const canSafelyRewriteOptions = document.activeElement !== recipientInput || !hasLoadedRecipientOptions;
+        if (canSafelyRewriteOptions && nextSignature !== recipientOptionsSignature) {
+          renderRecipientSelect(response.recipients);
           recipientOptionsSignature = nextSignature;
         }
-        recipientHint.textContent = response.recipients.length === 0 ? "Recent recipients will appear here when available." : "";
+        recipientHint.textContent =
+          response.recipients.length === 0
+            ? "No recent recipients loaded yet. " + formatRecipientStats(response.stats) + ". You can still type a number manually."
+            : "";
       }
 
       async function scheduleMessage(event) {
@@ -378,7 +436,7 @@ export const localWebUiHtml = String.raw`<!doctype html>
             userId: currentUserId(),
             recipient: form.get("recipient"),
             text: form.get("text"),
-            scheduledAtLocal: String(form.get("scheduledAtLocal")).replace(" ", "T"),
+            scheduledAtLocal: scheduledAtLocalFromForm(form),
             timezone: form.get("timezone")
           })
         });
@@ -434,11 +492,56 @@ export const localWebUiHtml = String.raw`<!doctype html>
         return block;
       }
 
+      function renderRecipientSelect(recipients) {
+        const placeholder = document.createElement("option");
+        placeholder.value = "";
+        placeholder.textContent = recipients.length === 0 ? "No recent recipients loaded" : "Choose recent recipient";
+        recipientSelect.replaceChildren(placeholder, ...recipients.map(renderRecipientOption));
+      }
+
       function renderRecipientOption(recipient) {
         const option = document.createElement("option");
         option.value = recipient.recipient;
-        option.label = recipient.displayName;
+        option.textContent =
+          (recipient.displayName || "Recent recipient") +
+          " - " +
+          recipient.recipient +
+          " (" +
+          recipient.source +
+          ")";
         return option;
+      }
+
+      function formatRecipientStats(stats) {
+        if (!stats) {
+          return "recipients: 0";
+        }
+
+        const totalRecipients = stats.totalRecipients ?? stats.mappedRecipients;
+        const scheduledFallbackCount = stats.scheduledFallbackCount ?? 0;
+        return (
+          "recipients: " +
+          totalRecipients +
+          " (Baileys mapped: " +
+          stats.mappedRecipients +
+          ", scheduled fallback: " +
+          scheduledFallbackCount +
+          ", contacts seen: " +
+          stats.contactsSeen +
+          ", chats seen: " +
+          stats.chatsSeen +
+          ", messages seen: " +
+          stats.messagesSeen +
+          ", lid mappings: " +
+          stats.lidMappingsSeen +
+          ")"
+        );
+      }
+
+      function scheduledAtLocalFromForm(form) {
+        const date = String(form.get("scheduledDate") || "").trim();
+        const time = String(form.get("scheduledTime") || "").trim();
+        return date && time ? date + "T" + time : "";
       }
 
       async function editMessage(message) {

@@ -1106,10 +1106,13 @@ Status: implemented.
 - The UI refreshed WhatsApp connection state every few seconds.
 - Each connection refresh also rebuilt the recent-recipient `<datalist>`.
 - Rebuilding the datalist while the recipient input was focused could make the phone-number field/suggestion bar jump during use.
+- The first stabilization pass avoided datalist rewrites while focused, but native datalist/hover behavior still did not reliably show contacts.
+- The browser's native `datetime-local` control displayed localized date text, including Hebrew month letters on this Windows/browser setup.
 
 ### Files Changed
 
-- `src/server/localWebUiHtml.ts`: stopped rebuilding recipient options while the recipient field is focused, skipped unchanged datalist rewrites, stabilized form alignment, and reserved hint text height.
+- `src/server/localWebUiHtml.ts`: replaced native datalist/hover behavior with a separate visible `Recent recipients from WhatsApp` dropdown under the recipient input, stabilized form alignment/hint height, and changed `Send At` to a plain `YYYY-MM-DDTHH:mm` text input to avoid localized month labels.
+- `test/integration/LocalWebServer.test.ts`: updated UI smoke coverage for the custom suggestions panel and non-localized date/time field.
 - `docs/project_state.md`, `docs/implementation_log.md`, and `docs/bug_log.md`: documented the manual result and UX fix.
 
 ### Commands Run
@@ -1121,4 +1124,144 @@ Status: implemented.
 
 - Typecheck passed.
 - Local web server integration tests passed.
-- The recipient input no longer refreshes its datalist while the user is actively focused in the phone-number field.
+- The recipient picker no longer depends on native datalist hover behavior.
+- Recent recipients now appear in a separate dropdown under the manual phone-number input when Baileys has provided recipient options.
+- The `Send At` field uses the stable text format `YYYY-MM-DDTHH:mm` instead of localized browser date labels.
+
+## Post-Chunk 13 Bug Fix - Baileys Contact Phone Number Mapping
+
+Status: implemented.
+
+### Root Cause
+
+- The recipient dropdown still showed `No recent recipients loaded` when Baileys contact data used a plain/E.164 `phoneNumber` and a non-phone contact `id`.
+- The recipient mapper only accepted values that already ended in `@s.whatsapp.net`, so valid contact phone numbers could be filtered out before they reached the UI.
+
+### Files Changed
+
+- `src/whatsapp/RecipientOptions.ts`: now normalizes contact `phoneNumber` values containing `+`, spaces, parentheses, or hyphens, and only falls back to `id` parsing when no usable phone number is present.
+- `src/whatsapp/BaileysWhatsAppAdapter.ts`: forwards Baileys `lidPnMappings` from history sync into the recipient option store.
+- `src/server/LocalWebServer.ts` and `src/server/localWebUiHtml.ts`: expose/display sanitized recipient count so the UI can show whether the backend has loaded any recipient options.
+- `test/unit/RecipientOptions.test.ts`: added regression coverage for Baileys contact records where `phoneNumber` is plain/E.164 and `id` is non-phone, and for LID-to-phone mapping from history sync.
+- `test/integration/LocalWebServer.test.ts`: updated connection API assertions for sanitized recipient counts.
+- `docs/bug_log.md` and `docs/implementation_log.md`: documented the root cause and fix.
+
+### Commands Run
+
+- `npm.cmd run typecheck` -> passed.
+- `npm.cmd test -- test/unit/RecipientOptions.test.ts test/unit/BaileysEventHandlers.test.ts test/integration/LocalWebServer.test.ts` -> passed; 3 test files, 17 tests.
+
+### Verification
+
+- Typecheck passed.
+- Recipient option tests passed.
+- Local web server integration tests passed.
+- Contacts with plain/E.164 Baileys `phoneNumber` values can now populate recent-recipient options.
+- Contacts/chats represented as LIDs can populate recent-recipient options when Baileys provides matching `lidPnMappings`.
+- The UI header shows `recipients: N`; if it stays `0`, the backend has not loaded any Baileys recipient options for the active session.
+
+## Post-Chunk 13 Bug Fix - Recipient Dropdown Local Fallback
+
+Status: implemented.
+
+### Root Cause
+
+- The visible recipient dropdown could still remain empty in a live session even after the UI rendering and Baileys mapper fixes.
+- The server only returned recipient options that the current in-memory Baileys adapter had learned from Baileys events.
+- If Baileys emitted no usable contacts/chats/messages for the active linked session, `/api/recipients` correctly returned an empty list and the UI showed no dropdown choices.
+
+### Files Changed
+
+- `src/server/LocalWebServer.ts`: `/api/recipients` now merges Baileys recipient options with a privacy-scoped local fallback built from the current user's existing scheduled messages. The API also returns sanitized `scheduledFallbackCount` and `totalRecipients` diagnostics.
+- `src/server/localWebUiHtml.ts`: dropdown labels now include the recipient source, and the recipient status text distinguishes Baileys-mapped recipients from scheduled-message fallback recipients.
+- `src/whatsapp/WhatsAppAdapter.ts`: widened recipient option source values to include `scheduled`.
+- `test/integration/LocalWebServer.test.ts`: added coverage that a manually scheduled recipient appears in `/api/recipients` even when the connection controller has no Baileys recipient options.
+- `docs/project_state.md`, `docs/implementation_log.md`, `docs/bug_log.md`, and `docs/file_guide.md`: documented the fallback behavior and diagnostic meaning.
+
+### Commands Run
+
+- `npm.cmd run typecheck` -> passed.
+- `npm.cmd test -- test/unit/RecipientOptions.test.ts test/unit/BaileysEventHandlers.test.ts test/integration/LocalWebServer.test.ts` -> passed; 3 test files, 21 tests.
+- `npm.cmd test` -> failed with two 5000ms timeouts in existing SQLite integration tests under full-suite parallel load; 17 test files and 88 tests passed, and there were no assertion failures in the changed recipient/web code.
+- `npm.cmd test -- test/integration/ScheduleService.sqlite.test.ts test/integration/SchedulerWorker.sqlite.test.ts` -> passed; 2 test files, 26 tests.
+- `npm.cmd run build` -> passed.
+- Secret-pattern scan excluding generated/dependency directories -> passed with no matches.
+- `git diff --check` -> passed with CRLF normalization warnings only.
+
+### Verification
+
+- Typecheck passed.
+- Focused recipient mapping, Baileys event-handler, and local web server tests passed.
+- Build passed.
+- The two full-suite timeout failures passed when rerun directly, indicating transient parallel SQLite/test-runner timing rather than a recipient-dropdown regression.
+- `/api/recipients` now returns prior scheduled recipients with source `scheduled` when Baileys has no mapped recipients.
+- The fallback does not log or expose message text, QR payloads, auth state, session keys, or secrets. It uses recipient values already visible to the same local UI through `/api/messages`.
+
+### Known Limitation
+
+- This does not force Baileys to export the user's full WhatsApp contact list. If Baileys counters remain at zero but scheduled fallback appears, the root cause is Baileys event availability for that live session rather than the dropdown rendering path.
+
+## Post-Chunk 13 Experiment - Baileys Full History Sync and Split Send At Controls
+
+Status: implemented.
+
+### Reason
+
+- Baileys documentation says history sync delivers past chats, contacts, and messages asynchronously, and that desktop-style full-history sync can return more history than the default browser profile.
+- The recipient dropdown still depends on whether WhatsApp/Baileys emits usable phone-number contact/chat data for the linked session.
+- The temporary plain text `Send At` field avoided browser-localized date labels, but the user requested separate calendar and time controls.
+
+### Files Changed
+
+- `src/config/AppConfig.ts`: added `baileysFullHistorySync`, enabled by `BAILEYS_FULL_HISTORY_SYNC=1`.
+- `src/whatsapp/BaileysWhatsAppAdapter.ts`: when the flag is enabled, uses `Browsers.macOS("Desktop")` and `syncFullHistory: true`; otherwise keeps the existing `Browsers.appropriate("Timer Bot")` behavior.
+- `src/server/localWebUiHtml.ts`: replaced the single text `Send At` field with separate browser date and time controls, then composes the existing backend `scheduledAtLocal` value during form submit.
+- `test/integration/LocalWebServer.test.ts`: updated UI smoke coverage for the split date/time controls.
+- `README.md`, `docs/project_state.md`, `docs/implementation_log.md`, and `docs/file_guide.md`: documented the opt-in full-history test mode and split date/time behavior.
+
+### Manual Test Command
+
+```powershell
+$env:BAILEYS_FULL_HISTORY_SYNC="1"
+npm.cmd run service
+```
+
+### Known Limitation
+
+- Full-history sync is an experiment, not a guarantee. It may improve active-chat/contact loading, but Baileys can still receive no contacts, partial contacts, or LID-only data that cannot safely be converted to phone-number recipients.
+
+### Commands Run
+
+- `npm.cmd run typecheck` -> passed.
+- `npm.cmd test -- test/integration/LocalWebServer.test.ts test/unit/RecipientOptions.test.ts test/unit/BaileysEventHandlers.test.ts` -> passed; 3 test files, 21 tests.
+- `npm.cmd run build` -> passed.
+- `npm.cmd test` -> passed; 19 test files, 90 tests.
+
+## Post-Chunk 13 Bug Fix - Full History Sync Connection Fallback
+
+Status: implemented.
+
+### Root Cause
+
+- Manual testing with `BAILEYS_FULL_HISTORY_SYNC=1` showed repeated temporary Baileys connection closes and reconnect attempts.
+- Baileys documentation and issues indicate desktop browser profiles can affect history availability and connection behavior. The desktop profile is useful as an experiment but is not stable for every session.
+
+### Files Changed
+
+- `src/whatsapp/BaileysConnectionState.ts`: exported sanitized disconnect status-code extraction for connection diagnostics.
+- `src/whatsapp/BaileysWhatsAppAdapter.ts`: when opt-in desktop full-history mode closes temporarily, the next reconnect falls back to the normal browser profile instead of staying in a reconnect loop. Expected QR-login restart closes still keep desktop mode.
+- `test/unit/BaileysEventHandlers.test.ts`: added coverage that connection close events surface sanitized status codes to adapter-level handlers.
+- `docs/project_state.md` and `docs/implementation_log.md`: documented the fallback behavior.
+
+### Commands Run
+
+- `npm.cmd run typecheck` -> passed.
+- `npm.cmd test -- test/unit/BaileysEventHandlers.test.ts test/integration/LocalWebServer.test.ts` -> passed; 2 test files, 15 tests.
+- `npm.cmd run build` -> passed.
+- `npm.cmd test` -> passed; 19 test files, 91 tests.
+- Secret-pattern scan excluding generated/dependency directories -> passed with no matches.
+- `git diff --check` -> passed with CRLF normalization warnings only.
+
+### Known Limitation
+
+- If the fallback triggers, the service should recover connectivity, but the experimental desktop full-history attempt is abandoned for that process. This favors a working service over forcing an unstable history-sync profile.

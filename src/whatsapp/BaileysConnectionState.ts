@@ -24,7 +24,7 @@ export function mapBaileysConnectionUpdate(
   return undefined;
 }
 
-function getDisconnectStatusCode(error: unknown): number | undefined {
+export function getDisconnectStatusCode(error: unknown): number | undefined {
   if (!error || typeof error !== "object") {
     return undefined;
   }

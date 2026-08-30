@@ -84,7 +84,13 @@
 - Chunk 13 `UserSessionManager` creates separate managed WhatsApp adapters/controllers per fixed user id and records sanitized session metrics.
 - Chunk 13 service mode can run one scheduler worker per fixed local user when the opt-in spike flag is enabled.
 - Chunk 13 local UI/API exposes a local-user selector, `/api/users`, and sanitized `/api/metrics`.
-- Post-Chunk 13 UI stabilization avoids rebuilding the recent-recipient datalist while the recipient field is focused, preventing the phone-number field from jumping during use.
+- Post-Chunk 13 UI stabilization replaces the native recent-recipient datalist/hover behavior with a separate visible `Recent recipients from WhatsApp` dropdown and changes `Send At` to a plain `YYYY-MM-DDTHH:mm` text input to avoid browser-localized month labels.
+- Post-Chunk 13 recipient mapping now accepts Baileys contact `phoneNumber` values that are plain/E.164 numbers instead of only accepting `number@s.whatsapp.net` JIDs, and uses Baileys history `lidPnMappings` to map LID contacts/chats to phone-number recipients when available.
+- `/api/connection` and the UI header expose only a sanitized recipient count (`recipients: N`) for recipient-option debugging.
+- `/api/recipients` now merges Baileys-provided recipient options with locally scheduled recipients for the active user, so the dropdown remains useful even when Baileys emits no usable contact/chat/message recipient data.
+- `BAILEYS_FULL_HISTORY_SYNC=1` switches Baileys to a desktop-style full-history sync attempt for contact/chat testing. It is opt-in because it can increase startup sync load and still cannot guarantee full contact access.
+- If desktop full-history mode causes a temporary Baileys close loop, the adapter logs a sanitized fallback event and retries with the normal browser profile so service startup can recover.
+- The schedule form now uses separate browser date and time controls and composes the existing backend `scheduledAtLocal` value client-side.
 
 ## Resume Instructions
 
@@ -111,6 +117,9 @@
 21. Chunk 13 automated implementation is complete and verified by typecheck, full test suite, and build.
 22. User reported the Chunk 13 manual test worked on 2026-08-30. No phone numbers, message text, QR payloads, or session details were recorded. Optional unlink/relink isolation was not separately confirmed.
 23. Post-Chunk 13 recipient-field jump fix is implemented and verified by typecheck plus local web server integration tests.
+24. Post-Chunk 13 Baileys contact phone-number/LID mapping fix is implemented and verified by typecheck, recipient option tests, Baileys event handler tests, and local web server integration tests.
+25. Post-Chunk 13 recipient dropdown fallback fix is implemented and verified by typecheck, focused recipient/API tests, build, secret-pattern scan, and diff check. The full test suite had two unrelated SQLite timeout failures under parallel load, and both failed files passed when rerun directly.
+26. Post-Chunk 13 full-history sync experiment and split Send At controls are implemented and verified by typecheck, focused recipient/API tests, full test suite, build, secret-pattern scan, and diff check.
 
 ## Important Caveat
 

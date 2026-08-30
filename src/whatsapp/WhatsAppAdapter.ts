@@ -22,8 +22,16 @@ export interface NormalizedRecipient {
 export interface RecipientOption {
   readonly displayName: string;
   readonly recipient: NormalizedRecipient;
-  readonly source: "chat" | "contact";
+  readonly source: "chat" | "contact" | "scheduled";
   readonly lastSeenAtUtc?: string;
+}
+
+export interface RecipientOptionStats {
+  readonly contactsSeen: number;
+  readonly chatsSeen: number;
+  readonly messagesSeen: number;
+  readonly lidMappingsSeen: number;
+  readonly mappedRecipients: number;
 }
 
 export interface SendResult {
@@ -51,5 +59,6 @@ export interface WhatsAppAdapter {
   disconnect(): Promise<void>;
   getStatus(): WhatsAppConnectionStatus;
   getRecipientOptions(): RecipientOption[];
+  getRecipientStats(): RecipientOptionStats;
   sendText(recipient: NormalizedRecipient, text: string): Promise<SendResult>;
 }

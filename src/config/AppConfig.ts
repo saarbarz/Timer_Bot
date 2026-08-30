@@ -14,6 +14,7 @@ export interface AppConfig {
   readonly maxScheduledSendsPerMinute: number;
   readonly backupDir: string;
   readonly chunk13MultiUserSpike: boolean;
+  readonly baileysFullHistorySync: boolean;
 }
 
 const projectRoot = process.cwd();
@@ -31,5 +32,6 @@ export const appConfig: AppConfig = {
   uiAuthPassword: process.env.UI_AUTH_PASSWORD,
   maxScheduledSendsPerMinute: Number(process.env.MAX_SCHEDULED_SENDS_PER_MINUTE ?? "10"),
   backupDir: process.env.BACKUP_DIR ?? path.join(projectRoot, "backups"),
-  chunk13MultiUserSpike: process.env.CHUNK13_MULTI_USER_SPIKE === "1"
+  chunk13MultiUserSpike: process.env.CHUNK13_MULTI_USER_SPIKE === "1",
+  baileysFullHistorySync: process.env.BAILEYS_FULL_HISTORY_SYNC === "1"
 };

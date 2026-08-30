@@ -1,4 +1,5 @@
-import type { BaileysEventMap } from "@whiskeysockets/baileys";
+import { Boom } from "@hapi/boom";
+import { DisconnectReason, type BaileysEventMap } from "@whiskeysockets/baileys";
 import { describe, expect, it, vi } from "vitest";
 
 import { registerBaileysEventHandlers } from "../../src/whatsapp/BaileysWhatsAppAdapter.js";
@@ -81,5 +82,75 @@ describe("registerBaileysEventHandlers", () => {
 
     expect(onQr).toHaveBeenCalledWith("redacted-test-qr");
     expect(onConnectionUpdate).toHaveBeenCalledWith({ qr: "redacted-test-qr" });
+  });
+
+  it("reports sanitized close status codes for connection diagnostics", () => {
+    const events = new FakeBaileysEvents();
+    const onConnectionClose = vi.fn();
+
+    registerBaileysEventHandlers(events, vi.fn(), {
+      onConnectionUpdate: vi.fn(),
+      onQr: vi.fn(),
+      onConnectionClose
+    });
+
+    events.emit("connection.update", {
+      connection: "close",
+      lastDisconnect: {
+        date: new Date("2026-08-30T00:00:00.000Z"),
+        error: new Boom("closed", { statusCode: DisconnectReason.connectionClosed })
+      }
+    });
+
+    expect(onConnectionClose).toHaveBeenCalledWith(DisconnectReason.connectionClosed);
+  });
+
+  it("forwards history contacts, chats, and LID mappings", () => {
+    const events = new FakeBaileysEvents();
+    const onContacts = vi.fn();
+    const onChats = vi.fn();
+
+    registerBaileysEventHandlers(events, vi.fn(), {
+      onConnectionUpdate: vi.fn(),
+      onQr: vi.fn(),
+      onContacts,
+      onChats
+    });
+
+    const contacts = [{ id: "123456789012345@lid", name: "Test Contact" }];
+    const chats = [{ id: "123456789012345@lid" }];
+    const lidPnMappings = [{ lid: "123456789012345@lid", pn: "972501234567@s.whatsapp.net" }];
+    events.emit("messaging-history.set", {
+      contacts,
+      chats,
+      messages: [],
+      lidPnMappings
+    });
+
+    expect(onContacts).toHaveBeenCalledWith(contacts, lidPnMappings);
+    expect(onChats).toHaveBeenCalledWith(chats, lidPnMappings);
+  });
+
+  it("forwards message upsert events for recent-recipient collection", () => {
+    const events = new FakeBaileysEvents();
+    const onMessages = vi.fn();
+
+    registerBaileysEventHandlers(events, vi.fn(), {
+      onConnectionUpdate: vi.fn(),
+      onQr: vi.fn(),
+      onMessages
+    });
+
+    const messages = [
+      {
+        key: {
+          remoteJid: "972501234567@s.whatsapp.net"
+        },
+        messageTimestamp: 1_798_000_000
+      }
+    ];
+    events.emit("messages.upsert", { messages, type: "notify" });
+
+    expect(onMessages).toHaveBeenCalledWith(messages);
   });
 });

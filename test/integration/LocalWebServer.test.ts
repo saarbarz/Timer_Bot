@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ConnectionController } from "../../src/server/ConnectionController.js";
 import { createLocalWebServer } from "../../src/server/LocalWebServer.js";
 import { UserSessionManager, type UserSession } from "../../src/server/UserSessionManager.js";
-import type { RecipientOption } from "../../src/whatsapp/WhatsAppAdapter.js";
+import type { RecipientOption, RecipientOptionStats } from "../../src/whatsapp/WhatsAppAdapter.js";
 
 interface TestContext {
   readonly tempDir: string;
@@ -40,6 +40,16 @@ class FakeConnectionController implements ConnectionController {
 
   getRecipientOptions(): RecipientOption[] {
     return this.recipientOptions;
+  }
+
+  getRecipientStats(): RecipientOptionStats {
+    return {
+      contactsSeen: this.recipientOptions.length,
+      chatsSeen: 0,
+      messagesSeen: 0,
+      lidMappingsSeen: 0,
+      mappedRecipients: this.recipientOptions.length
+    };
   }
 
   setRecipientOptions(recipientOptions: RecipientOption[]): void {
@@ -95,7 +105,14 @@ describe("Local web server", () => {
     expect(response.status).toBe(200);
     expect(html).toContain("Timer Bot");
     expect(html).toContain("Schedule Message");
-    expect(html).toContain("recipientOptions");
+    expect(html).toContain("recipientSelect");
+    expect(html).toContain("Recent recipients from WhatsApp");
+    expect(html).toContain("scheduledDate");
+    expect(html).toContain("scheduledTime");
+    expect(html).toContain('type="date"');
+    expect(html).toContain('type="time"');
+    expect(html).toContain("scheduledAtLocalFromForm");
+    expect(html).not.toContain("datetime-local");
   });
 
   it("creates, lists, updates, and cancels scheduled messages through the API", async () => {
@@ -186,7 +203,18 @@ describe("Local web server", () => {
 
     current().connection.setRecipientOptions([]);
     const emptyRecipients = await api("GET", "/api/recipients");
-    expect(emptyRecipients.body).toEqual({ recipients: [] });
+    expect(emptyRecipients.body).toMatchObject({
+      recipients: [],
+      stats: {
+        contactsSeen: 0,
+        chatsSeen: 0,
+        messagesSeen: 0,
+        lidMappingsSeen: 0,
+        mappedRecipients: 0,
+        scheduledFallbackCount: 0,
+        totalRecipients: 0
+      }
+    });
 
     const created = await api("POST", "/api/messages", {
       recipient: "+972509999999",
@@ -200,14 +228,31 @@ describe("Local web server", () => {
       text: "manual fallback",
       status: "pending"
     });
+
+    const fallbackRecipients = await api("GET", "/api/recipients");
+    expect(fallbackRecipients.body.recipients).toEqual([
+      {
+        displayName: "Previously scheduled",
+        recipient: "972509999999",
+        jid: "972509999999@s.whatsapp.net",
+        source: "scheduled",
+        lastSeenAtUtc: expect.any(String)
+      }
+    ]);
+    expect(fallbackRecipients.body.stats).toMatchObject({
+      scheduledFallbackCount: 1,
+      totalRecipients: 1
+    });
   });
 
   it("exposes connection status and QR through memory-only endpoints", async () => {
     const initial = await api("GET", "/api/connection");
-    expect(initial.body).toEqual({ status: "idle", qrAvailable: false });
+    expect(initial.body).toMatchObject({ status: "idle", qrAvailable: false, recipientCount: 0 });
+    expect(initial.body.recipientStats).toMatchObject({ mappedRecipients: 0 });
 
     const connected = await api("POST", "/api/connection/connect");
-    expect(connected.body).toEqual({ status: "awaiting_qr", qrAvailable: true });
+    expect(connected.body).toMatchObject({ status: "awaiting_qr", qrAvailable: true, recipientCount: 0 });
+    expect(connected.body.recipientStats).toMatchObject({ mappedRecipients: 0 });
     expect(current().connection.connect).toHaveBeenCalledOnce();
 
     const qr = await api("GET", "/api/connection/qr");
@@ -229,6 +274,7 @@ describe("Local web server", () => {
             disconnect: connection.disconnect,
             getStatus: () => connection.getStatus(),
             getRecipientOptions: () => connection.getRecipientOptions(),
+            getRecipientStats: () => connection.getRecipientStats(),
             sendText: async () => ({ success: true as const })
           },
           connection,

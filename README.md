@@ -190,6 +190,17 @@ The default send cap is controlled by:
 MAX_SCHEDULED_SENDS_PER_MINUTE=10
 ```
 
+Optional Baileys full-history contact/chat sync test mode:
+
+```powershell
+$env:BAILEYS_FULL_HISTORY_SYNC="1"
+npm.cmd run service
+```
+
+This asks Baileys to use a desktop-style history sync that may return more chats/contacts for the recipient dropdown. It can make startup heavier and still depends on what WhatsApp/Baileys exposes for the linked session.
+
+If the desktop history profile repeatedly closes the connection, the service falls back to the normal browser profile on the next reconnect so sending can still work.
+
 Database-only backup:
 
 ```powershell

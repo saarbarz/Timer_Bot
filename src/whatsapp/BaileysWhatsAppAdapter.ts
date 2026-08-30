@@ -2,6 +2,7 @@ import path from "node:path";
 
 import makeWASocket, {
   Browsers,
+  DisconnectReason,
   type BaileysEventEmitter,
   type ConnectionState,
   type WASocket,
@@ -11,15 +12,19 @@ import pino from "pino";
 import qrcode from "qrcode-terminal";
 
 import { appConfig } from "../config/AppConfig.js";
+import { getDisconnectStatusCode } from "./BaileysConnectionState.js";
 import { ConnectionManager } from "./ConnectionManager.js";
 import {
   type BaileysChatCandidate,
   type BaileysContactCandidate,
+  type BaileysLidPnMappingCandidate,
+  type BaileysMessageCandidate,
   RecipientOptionStore
 } from "./RecipientOptions.js";
 import type {
   NormalizedRecipient,
   RecipientOption,
+  RecipientOptionStats,
   WhatsAppLogEvent,
   WhatsAppLogger,
   SendResult,
@@ -49,6 +54,7 @@ export class BaileysWhatsAppAdapter implements WhatsAppAdapter {
   private readonly log: WhatsAppLogger;
   private readonly connectionManager: ConnectionManager;
   private readonly recipientOptions = new RecipientOptionStore();
+  private useDesktopHistorySync = appConfig.baileysFullHistorySync;
   private socket?: WASocket;
 
   constructor(options: BaileysWhatsAppAdapterOptions = {}) {
@@ -58,9 +64,10 @@ export class BaileysWhatsAppAdapter implements WhatsAppAdapter {
       ((authState) =>
         makeWASocket({
           auth: authState,
-          browser: Browsers.appropriate("Timer Bot"),
+          browser: this.useDesktopHistorySync ? Browsers.macOS("Desktop") : Browsers.appropriate("Timer Bot"),
           logger: pino({ level: "silent" }),
-          printQRInTerminal: false
+          printQRInTerminal: false,
+          syncFullHistory: this.useDesktopHistorySync
         }));
     this.renderQr = options.renderQr ?? ((qr) => qrcode.generate(qr, { small: true }));
     this.log = options.log ?? defaultWhatsAppLogger;
@@ -89,6 +96,10 @@ export class BaileysWhatsAppAdapter implements WhatsAppAdapter {
 
   getRecipientOptions(): RecipientOption[] {
     return this.recipientOptions.list();
+  }
+
+  getRecipientStats(): RecipientOptionStats {
+    return this.recipientOptions.stats();
   }
 
   async sendText(recipient: NormalizedRecipient, text: string): Promise<SendResult> {
@@ -122,8 +133,10 @@ export class BaileysWhatsAppAdapter implements WhatsAppAdapter {
     registerBaileysEventHandlers(this.socket.ev, saveCreds, {
       onConnectionUpdate: (update) => this.connectionManager.handleConnectionUpdate(update),
       onQr: (qr) => this.renderQr(qr),
-      onContacts: (contacts) => this.recipientOptions.upsertContacts(contacts),
-      onChats: (chats) => this.recipientOptions.upsertChats(chats),
+      onContacts: (contacts, lidPnMappings) => this.recipientOptions.upsertContacts(contacts, lidPnMappings),
+      onChats: (chats, lidPnMappings) => this.recipientOptions.upsertChats(chats, lidPnMappings),
+      onMessages: (messages) => this.recipientOptions.upsertMessages(messages),
+      onConnectionClose: (statusCode) => this.handleConnectionClose(statusCode),
       onCredentialsSaveError: (error) => this.logCredentialsSaveError(error)
     });
   }
@@ -142,6 +155,24 @@ export class BaileysWhatsAppAdapter implements WhatsAppAdapter {
       errorName: error instanceof Error ? error.name : typeof error
     });
   }
+
+  private handleConnectionClose(statusCode: number | undefined): void {
+    if (!appConfig.baileysFullHistorySync || !this.useDesktopHistorySync) {
+      return;
+    }
+
+    if (statusCode === DisconnectReason.restartRequired) {
+      return;
+    }
+
+    this.useDesktopHistorySync = false;
+    this.log({
+      level: "warn",
+      event: "whatsapp.full_history_desktop_fallback",
+      message: "Baileys desktop full-history mode closed the connection; falling back to the standard browser profile.",
+      errorCode: statusCode === undefined ? "connection_closed" : String(statusCode)
+    });
+  }
 }
 
 export function registerBaileysEventHandlers(
@@ -150,8 +181,16 @@ export function registerBaileysEventHandlers(
   handlers: {
     readonly onConnectionUpdate: (update: Partial<ConnectionState>) => void;
     readonly onQr: (qr: string) => void;
-    readonly onContacts?: (contacts: readonly BaileysContactCandidate[]) => void;
-    readonly onChats?: (chats: readonly BaileysChatCandidate[]) => void;
+    readonly onContacts?: (
+      contacts: readonly BaileysContactCandidate[],
+      lidPnMappings?: readonly BaileysLidPnMappingCandidate[]
+    ) => void;
+    readonly onChats?: (
+      chats: readonly BaileysChatCandidate[],
+      lidPnMappings?: readonly BaileysLidPnMappingCandidate[]
+    ) => void;
+    readonly onMessages?: (messages: readonly BaileysMessageCandidate[]) => void;
+    readonly onConnectionClose?: (statusCode: number | undefined) => void;
     readonly onCredentialsSaveError?: (error: unknown) => void;
   }
 ): void {
@@ -168,12 +207,16 @@ export function registerBaileysEventHandlers(
       handlers.onQr(update.qr);
     }
 
+    if (update.connection === "close") {
+      handlers.onConnectionClose?.(getDisconnectStatusCode(update.lastDisconnect?.error));
+    }
+
     handlers.onConnectionUpdate(update);
   });
 
   events.on("messaging-history.set", (history) => {
-    handlers.onContacts?.(history.contacts);
-    handlers.onChats?.(history.chats);
+    handlers.onContacts?.(history.contacts, history.lidPnMappings);
+    handlers.onChats?.(history.chats, history.lidPnMappings);
   });
 
   events.on("contacts.upsert", (contacts) => {
@@ -190,6 +233,10 @@ export function registerBaileysEventHandlers(
 
   events.on("chats.update", (chats) => {
     handlers.onChats?.(chats);
+  });
+
+  events.on("messages.upsert", ({ messages }) => {
+    handlers.onMessages?.(messages);
   });
 }
 
