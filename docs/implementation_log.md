@@ -995,3 +995,32 @@ Status: completed.
 - This is still single-user Basic auth and local/container hardening, not multi-user identity or authorization.
 - Database backup intentionally excludes WhatsApp auth/session state. If auth state is backed up manually, it must be protected separately.
 - Docker image build and real container restart verification still require Docker Desktop/Linux engine to be running.
+
+## Post-Chunk 12 Planning Addendum - Future Public Architecture Gate
+
+Status: documented.
+
+### Decision
+
+- Continue with the current local single-user PoC chunks before attempting a public deployment redesign.
+- Do not turn the current app into a public SaaS app by only adding stronger web auth.
+- Before any public, multi-user, cloud-hosted, or remote-scheduling work, add a dedicated architecture/design chunk for a local sender agent plus cloud scheduler/control-plane split.
+
+### Direction
+
+- The cloud scheduler/control plane may store users, schedules, job state, delivery status, and encrypted schedule payloads.
+- The user-run local sender agent should hold WhatsApp linked-device auth/session state locally, connect outbound to the cloud, receive due-send jobs, send through `WhatsAppAdapter`, and report status.
+- The cloud service should not centrally store WhatsApp auth/session keys.
+- Message text should preferably be encrypted so only the local agent can decrypt it.
+
+### Files Changed
+
+- `docs/future_architecture_plan.md`: added the future public-use safety gate and local sender agent / cloud scheduler direction.
+- `docs/project_state.md`: updated resume instructions and architecture decisions to include the gate.
+- `docs/file_guide.md`: documented the new future architecture plan file.
+- `docs/bug_log.md`: added the current architecture's public/multi-user limitation.
+- `README.md`: added a short future public deployment direction note.
+
+### Verification
+
+- Documentation-only change. No runtime behavior changed.

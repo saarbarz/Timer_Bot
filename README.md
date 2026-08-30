@@ -197,3 +197,7 @@ npm.cmd run backup:db
 ```
 
 This backs up SQLite only. It does not back up WhatsApp auth/session state.
+
+## Future Public Deployment Direction
+
+Do not turn the current local single-user service into a public SaaS app by only adding stronger web auth. Before public or multi-user work, follow `docs/future_architecture_plan.md`: keep WhatsApp auth/session state on a user-run local sender agent, and use any future cloud service as a scheduler/control plane.
