@@ -2,9 +2,9 @@
 
 ## Current Position
 
-- Current chunk: Chunk 9 - Local Web UI is complete.
-- Last completed chunk: Chunk 9 - Local Web UI.
-- Next allowed chunk: Chunk 10 - Recipient UX.
+- Current chunk: Chunk 10 - Recipient UX is complete.
+- Last completed chunk: Chunk 10 - Recipient UX.
+- Next allowed chunk: Chunk 11.
 - WhatsApp code status: Baileys connection adapter exists, manual QR/device linking was confirmed, one-shot text sending behind `WhatsAppAdapter` was confirmed by real manual send tests, scheduled WhatsApp delivery was confirmed by real manual test, and reconnect lifecycle lives in `ConnectionManager`.
 
 ## Environment
@@ -61,6 +61,9 @@
 - The local web UI supports connection status, in-memory QR display, schedule creation, schedule listing, pending-message text/time edits, and pending-message cancellation.
 - The HTTP API is a thin layer over `ScheduleService`; frontend code does not write directly to SQLite.
 - The QR shown through the web API is held in process memory only and is not written to logs or SQLite.
+- Chunk 10 inspected installed Baileys events and found `messaging-history.set`, `chats.upsert`, `chats.update`, `contacts.upsert`, and `contacts.update` available for optional recipient suggestions.
+- Recent recipient options are kept in memory inside the Baileys-backed adapter, deduped by individual `@s.whatsapp.net` JID, and exposed to the local UI through `/api/recipients`.
+- Recipient suggestions are optional; manual phone-number entry remains the scheduling fallback when no chat/contact data is available.
 - `src/index.ts` uses `pathToFileURL` for direct-execution detection so startup smoke output works with Windows paths.
 
 ## Resume Instructions
@@ -78,6 +81,7 @@
 11. Chunk 7 automated implementation is complete and verified by tests/build/safe CLI smoke. User confirmed one real scheduled WhatsApp delivery worked on 2026-08-27.
 12. Chunk 8 automated implementation is complete and verified by tests/build/safe CLI smoke. User confirmed the Chunk 8 manual restart test worked on 2026-08-28 after stopping the foreground worker once with Ctrl+C and restarting it. User also confirmed the Chunk 8 manual cancel test worked on 2026-08-28: the message was not sent and `schedule:list` showed it was cancelled.
 13. Chunk 9 local web UI is complete and verified by API tests, UI smoke, typecheck, tests, build, and a localhost server smoke.
+14. Chunk 10 recipient UX is complete and verified by mapper tests, local web API tests, typecheck, full test suite, and build.
 
 ## Important Caveat
 
@@ -88,3 +92,5 @@ Chunk 6 deliberately treats unknown send failures as terminal by default. This f
 Chunk 7 manual E2E confirmation is complete. Automated tests still intentionally avoid connecting to live WhatsApp or sending external messages.
 
 Chunk 8 stale-processing recovery can retry a row that was stuck in `processing`, which fixes the crash-before-send case. It still cannot prove whether WhatsApp accepted a message immediately before a crash, so that known exactly-once hard case remains.
+
+Until the later long-running service/worker chunk, `npm.cmd run web` and `npm.cmd run schedule:worker` each create their own Baileys adapter if their WhatsApp connection paths are used. Do not use the web UI WhatsApp connect button while the foreground worker is connected with the same `auth/` session.

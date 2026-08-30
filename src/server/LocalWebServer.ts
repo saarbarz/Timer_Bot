@@ -9,6 +9,7 @@ import { ScheduleError, ScheduleService } from "../domain/ScheduleService.js";
 import { formatUtcIsoInZone } from "../cli/scheduleListFormat.js";
 import type { ConnectionController } from "./ConnectionController.js";
 import { localWebUiHtml } from "./localWebUiHtml.js";
+import type { RecipientOption } from "../whatsapp/WhatsAppAdapter.js";
 
 export interface LocalWebServerOptions {
   readonly databasePath?: string;
@@ -73,6 +74,13 @@ async function routeRequest(
     sendJson(response, 200, {
       status: options.connection?.getStatus() ?? "idle",
       qr: options.connection?.getQrTerminal()
+    });
+    return;
+  }
+
+  if (method === "GET" && url.pathname === "/api/recipients") {
+    sendJson(response, 200, {
+      recipients: options.connection?.getRecipientOptions().map(toApiRecipientOption) ?? []
     });
     return;
   }
@@ -185,6 +193,16 @@ function toApiMessage(message: ScheduledMessage | undefined): Record<string, unk
     providerMessageId: message.providerMessageId,
     createdAtUtc: message.createdAtUtc,
     updatedAtUtc: message.updatedAtUtc
+  };
+}
+
+function toApiRecipientOption(option: RecipientOption): Record<string, unknown> {
+  return {
+    displayName: option.displayName,
+    recipient: option.recipient.phoneNumber,
+    jid: option.recipient.jid,
+    source: option.source,
+    lastSeenAtUtc: option.lastSeenAtUtc
   };
 }
 

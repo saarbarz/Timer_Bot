@@ -12,8 +12,14 @@ import qrcode from "qrcode-terminal";
 
 import { appConfig } from "../config/AppConfig.js";
 import { ConnectionManager } from "./ConnectionManager.js";
+import {
+  type BaileysChatCandidate,
+  type BaileysContactCandidate,
+  RecipientOptionStore
+} from "./RecipientOptions.js";
 import type {
   NormalizedRecipient,
+  RecipientOption,
   WhatsAppLogEvent,
   WhatsAppLogger,
   SendResult,
@@ -42,6 +48,7 @@ export class BaileysWhatsAppAdapter implements WhatsAppAdapter {
   private readonly renderQr: (qr: string) => void;
   private readonly log: WhatsAppLogger;
   private readonly connectionManager: ConnectionManager;
+  private readonly recipientOptions = new RecipientOptionStore();
   private socket?: WASocket;
 
   constructor(options: BaileysWhatsAppAdapterOptions = {}) {
@@ -80,6 +87,10 @@ export class BaileysWhatsAppAdapter implements WhatsAppAdapter {
     return this.connectionManager.getStatus();
   }
 
+  getRecipientOptions(): RecipientOption[] {
+    return this.recipientOptions.list();
+  }
+
   async sendText(recipient: NormalizedRecipient, text: string): Promise<SendResult> {
     if (this.socket === undefined || this.connectionManager.getStatus() !== "connected") {
       return {
@@ -111,6 +122,8 @@ export class BaileysWhatsAppAdapter implements WhatsAppAdapter {
     registerBaileysEventHandlers(this.socket.ev, saveCreds, {
       onConnectionUpdate: (update) => this.connectionManager.handleConnectionUpdate(update),
       onQr: (qr) => this.renderQr(qr),
+      onContacts: (contacts) => this.recipientOptions.upsertContacts(contacts),
+      onChats: (chats) => this.recipientOptions.upsertChats(chats),
       onCredentialsSaveError: (error) => this.logCredentialsSaveError(error)
     });
   }
@@ -137,6 +150,8 @@ export function registerBaileysEventHandlers(
   handlers: {
     readonly onConnectionUpdate: (update: Partial<ConnectionState>) => void;
     readonly onQr: (qr: string) => void;
+    readonly onContacts?: (contacts: readonly BaileysContactCandidate[]) => void;
+    readonly onChats?: (chats: readonly BaileysChatCandidate[]) => void;
     readonly onCredentialsSaveError?: (error: unknown) => void;
   }
 ): void {
@@ -154,6 +169,27 @@ export function registerBaileysEventHandlers(
     }
 
     handlers.onConnectionUpdate(update);
+  });
+
+  events.on("messaging-history.set", (history) => {
+    handlers.onContacts?.(history.contacts);
+    handlers.onChats?.(history.chats);
+  });
+
+  events.on("contacts.upsert", (contacts) => {
+    handlers.onContacts?.(contacts);
+  });
+
+  events.on("contacts.update", (contacts) => {
+    handlers.onContacts?.(contacts);
+  });
+
+  events.on("chats.upsert", (chats) => {
+    handlers.onChats?.(chats);
+  });
+
+  events.on("chats.update", (chats) => {
+    handlers.onChats?.(chats);
   });
 }
 

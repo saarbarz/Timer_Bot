@@ -35,14 +35,15 @@
 - `src/db/migrations/002_add_next_attempt_at.ts`: adds `next_attempt_at_utc` and updates the due-message index for retry scheduling.
 - `src/cli/waConnect.ts`: manual CLI for opening a Baileys WhatsApp connection and showing the linked-device QR.
 - `src/cli/waSend.ts`: manual one-shot CLI for validating a send request, lazy-loading the Baileys adapter only after validation passes, connecting to WhatsApp, and sending one text message to an explicit phone-number recipient.
-- `src/server/ConnectionController.ts`: in-memory connection/QR controller for the local web server, backed by `BaileysWhatsAppAdapter` in production and fakeable in tests.
-- `src/server/LocalWebServer.ts`: localhost HTTP request handler and server factory with JSON API routes over `ScheduleService`.
-- `src/server/localWebUiHtml.ts`: minimal local browser UI for connection status, QR display, schedule creation, listing, pending edits, and cancellation.
+- `src/server/ConnectionController.ts`: in-memory connection/QR/recipient controller for the local web server, backed by `BaileysWhatsAppAdapter` in production and fakeable in tests.
+- `src/server/LocalWebServer.ts`: localhost HTTP request handler and server factory with JSON API routes over `ScheduleService`, connection status, QR display, and optional recipient suggestions.
+- `src/server/localWebUiHtml.ts`: minimal local browser UI for connection status, QR display, schedule creation with optional recent recipient suggestions, listing, pending edits, and cancellation.
 - `src/server/startLocalWebServer.ts`: `npm.cmd run web` entry point.
-- `src/whatsapp/WhatsAppAdapter.ts`: transport interface and internal send result types that future scheduler code must depend on instead of Baileys directly.
+- `src/whatsapp/WhatsAppAdapter.ts`: transport interface, recipient option shape, and internal send result types that future scheduler code must depend on instead of Baileys directly.
 - `src/whatsapp/BaileysConnectionState.ts`: pure mapping from Baileys connection updates to internal connection statuses.
 - `src/whatsapp/ConnectionManager.ts`: centralized lifecycle manager for connection status, bounded reconnect backoff, timer cancellation, and shutdown.
 - `src/whatsapp/BaileysWhatsAppAdapter.ts`: Baileys-backed adapter that opens/closes sockets, registers connection and credential events, persists auth under `auth/`, renders QR codes, sends individual text messages, and reports credential-save failures through structured logs.
+- `src/whatsapp/RecipientOptions.ts`: pure mapping and in-memory store for optional recent recipient suggestions sourced from Baileys chat/contact events, deduped by individual JID.
 - `src/whatsapp/RecipientNormalizer.ts`: pure recipient normalization and validation for phone-number based individual WhatsApp recipients.
 - `src/whatsapp/SendTextNow.ts`: validation-first send-now service and reusable request validator that convert validation and transport failures into `SendResult`.
 
@@ -51,12 +52,13 @@
 - `test/unit/config.test.ts`: Chunk 0 smoke tests for config/startup wiring and the Windows direct-execution regression.
 - `test/integration/ScheduleService.sqlite.test.ts`: Chunk 4 integration tests against temporary SQLite databases for migrations, create/list/update/cancel rules, persistence after reopen, and timezone conversion.
 - `test/integration/SchedulerWorker.sqlite.test.ts`: Chunk 5 through Chunk 8 integration tests for due-message claiming, future/cancelled exclusion, successful sent marking, no duplicate sends, overdue restart behavior, cancelled-message exclusion, reschedule timing, stale-processing recovery, retry backoff, terminal failure, max attempts, recovery after retry, retry metadata cleanup, and migrating an existing Chunk 4 database.
-- `test/integration/LocalWebServer.test.ts`: Chunk 9 API and local UI smoke tests against a temporary SQLite database and fake connection controller.
+- `test/integration/LocalWebServer.test.ts`: Chunk 9 and Chunk 10 API/local UI smoke tests against a temporary SQLite database and fake connection controller, including optional recipient suggestions and manual fallback.
 - `test/unit/BaileysConnectionState.test.ts`: Chunk 1 connection status transition tests.
 - `test/unit/BaileysReconnect.test.ts`: reconnect decision tests, including relink-required Baileys close codes.
 - `test/unit/BaileysEventHandlers.test.ts`: tests for event handler registration, credential save callback wiring, QR forwarding, and credential-save error reporting.
 - `test/unit/ConnectionManager.test.ts`: fake-timer tests for bounded reconnect backoff, no reconnect on relink-required closes, and shutdown timer cancellation.
 - `test/unit/RecipientNormalizer.test.ts`: Chunk 2 tests for phone-number normalization and group rejection.
+- `test/unit/RecipientOptions.test.ts`: Chunk 10 tests for Baileys chat/contact mapping, individual-recipient filtering, and dedupe by JID.
 - `test/unit/SendTextNow.test.ts`: Chunk 2 tests for validation without an adapter, empty text rejection, exactly-one adapter call on success, and transport exception mapping.
 - `test/unit/scheduleArgs.test.ts`: Chunk 7 and Chunk 8 tests for schedule/create/cancel/update-time/worker CLI argument parsing, `--in` relative time resolution, and stale-processing worker options.
 - `test/unit/scheduleListFormat.test.ts`: tests local timestamp formatting for `schedule:list` and guards against printing recipient or message text.

@@ -205,6 +205,11 @@ export const localWebUiHtml = String.raw`<!doctype html>
         color: var(--danger);
       }
 
+      .hint {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
       @media (max-width: 860px) {
         form,
         .toolbar,
@@ -249,7 +254,12 @@ export const localWebUiHtml = String.raw`<!doctype html>
       <section>
         <h2>Schedule Message</h2>
         <form id="scheduleForm">
-          <label>Recipient<input name="recipient" placeholder="972501234567" autocomplete="off" /></label>
+          <label>
+            Recipient
+            <input name="recipient" placeholder="972501234567" autocomplete="off" list="recipientOptions" />
+            <datalist id="recipientOptions"></datalist>
+            <span id="recipientHint" class="hint"></span>
+          </label>
           <label>Message<textarea name="text" placeholder="Message text"></textarea></label>
           <label>Send At<input name="scheduledAtLocal" type="datetime-local" step="1" /></label>
           <label>Timezone<input name="timezone" value="Asia/Jerusalem" /></label>
@@ -270,6 +280,8 @@ export const localWebUiHtml = String.raw`<!doctype html>
       const notice = document.querySelector("#notice");
       const messages = document.querySelector("#messages");
       const scheduleForm = document.querySelector("#scheduleForm");
+      const recipientOptions = document.querySelector("#recipientOptions");
+      const recipientHint = document.querySelector("#recipientHint");
 
       document.querySelector("#connectButton").addEventListener("click", connectWhatsApp);
       document.querySelector("#refreshConnectionButton").addEventListener("click", refreshConnection);
@@ -289,6 +301,7 @@ export const localWebUiHtml = String.raw`<!doctype html>
         const status = await api("/api/connection");
         connectionStatus.textContent = status.status;
         statusDot.className = "dot " + status.status;
+        await refreshRecipients();
 
         const qrResponse = await api("/api/connection/qr");
         if (qrResponse.qr) {
@@ -298,6 +311,12 @@ export const localWebUiHtml = String.raw`<!doctype html>
           qr.hidden = true;
           qr.textContent = "";
         }
+      }
+
+      async function refreshRecipients() {
+        const response = await api("/api/recipients");
+        recipientOptions.replaceChildren(...response.recipients.map(renderRecipientOption));
+        recipientHint.textContent = response.recipients.length === 0 ? "Recent recipients will appear here when available." : "";
       }
 
       async function scheduleMessage(event) {
@@ -362,6 +381,13 @@ export const localWebUiHtml = String.raw`<!doctype html>
         content.textContent = value || "";
         block.append(caption, content);
         return block;
+      }
+
+      function renderRecipientOption(recipient) {
+        const option = document.createElement("option");
+        option.value = recipient.recipient;
+        option.label = recipient.displayName;
+        return option;
       }
 
       async function editMessage(message) {

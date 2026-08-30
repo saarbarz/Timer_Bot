@@ -32,7 +32,7 @@ The npm scripts invoke TypeScript through `node --import tsx` for reliable proce
 
 ## Current Scope
 
-The project has completed Chunk 9: Local Web UI. It can reuse the saved WhatsApp linked-device session, send one explicit text message, create/list/cancel/reschedule messages in SQLite, run a deterministic scheduler worker against a fakeable sender, apply bounded retry/terminal failure handling, run a process-mode scheduler worker wired to the real Baileys adapter, recover stale `processing` rows, and serve a local browser UI with a thin HTTP API over the existing scheduling services. The next allowed chunk is Chunk 10: Recipient UX.
+The project has completed Chunk 10: Recipient UX. It can reuse the saved WhatsApp linked-device session, send one explicit text message, create/list/cancel/reschedule messages in SQLite, run a deterministic scheduler worker against a fakeable sender, apply bounded retry/terminal failure handling, run a process-mode scheduler worker wired to the real Baileys adapter, recover stale `processing` rows, serve a local browser UI with a thin HTTP API over the existing scheduling services, and show optional recent recipient suggestions when Baileys supplies chat/contact data. The next allowed chunk is Chunk 11.
 
 Post-Chunk 5 bug-hunt fixes are also complete: the startup entry point now prints correctly on Windows, `wa:send` validates invalid input before loading or connecting WhatsApp transport, and safe smoke commands have been reverified.
 
@@ -146,4 +146,6 @@ Then open:
 http://127.0.0.1:3000
 ```
 
-The web UI supports WhatsApp connection status, QR display for linking, schedule creation, message listing, pending-message text/time edits, and pending-message cancellation. It is a local single-user UI only; it does not add accounts, billing, cloud hosting, or multi-user behavior.
+The web UI supports WhatsApp connection status, QR display for linking, schedule creation, message listing, pending-message text/time edits, pending-message cancellation, and optional recent recipient suggestions. Manual phone-number entry always remains available, even if no recent recipients are loaded. It is a local single-user UI only; it does not add accounts, billing, cloud hosting, or multi-user behavior.
+
+Until a later service/worker chunk unifies long-running behavior, avoid opening the web UI WhatsApp connection at the same time as `schedule:worker`. They are separate Baileys processes using the same local `auth/` session and can cause a `needs_relink` / `not_connected` failure.

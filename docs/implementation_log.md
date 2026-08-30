@@ -768,3 +768,70 @@ Status: completed.
 - The web UI does not add accounts, billing, teams, cloud hosting, or multi-user isolation.
 - `npm.cmd run web` serves the UI/API; the actual scheduled-send worker still runs through `npm.cmd run schedule:worker` until a later deployment/service chunk.
 - QR is exposed only through a local memory endpoint for display and is not persisted, but it is still sensitive and should not be pasted into chat.
+
+## Chunk 10 - Recipient UX
+
+Status: completed.
+
+### Scope
+
+- Inspect the installed Baileys APIs/events before implementing recipient UX.
+- Prefer a small recent-recipient picker over copying a full address book.
+- Keep manual phone-number entry as the scheduling fallback when no chat/contact data is available.
+- Store recipient suggestions in memory only as display name plus normalized individual recipient/JID metadata.
+- Keep scheduling validation and sending behavior unchanged.
+- Do not implement groups, full contact sync persistence, multi-user behavior, or long-running service management.
+
+### Baileys API Inspected
+
+- Installed `@whiskeysockets/baileys@7.0.0-rc14` typings expose `messaging-history.set` with `chats` and `contacts`.
+- Typings expose `chats.upsert`, `chats.update`, `contacts.upsert`, and `contacts.update`.
+- `Contact` includes `id`, optional `phoneNumber`, `name`, `notify`, and `verifiedName`.
+- `Chat` includes `id` and timestamp fields such as `lastMessageRecvTimestamp` / `conversationTimestamp`.
+- Because history/contact sync is asynchronous and may not be populated reliably, recipient suggestions are optional and do not block scheduling.
+
+### Files Changed
+
+- `src/whatsapp/WhatsAppAdapter.ts`: added `RecipientOption` and `getRecipientOptions()` to the adapter boundary.
+- `src/whatsapp/RecipientOptions.ts`: added pure chat/contact mapping, individual-JID filtering, timestamp mapping, and in-memory dedupe by JID.
+- `src/whatsapp/BaileysWhatsAppAdapter.ts`: listens to Baileys history/chat/contact events and updates the in-memory recipient option store.
+- `src/server/ConnectionController.ts`: exposes recipient options from the adapter to the local web server.
+- `src/server/LocalWebServer.ts`: added `GET /api/recipients`.
+- `src/server/localWebUiHtml.ts`: added a datalist-backed recent recipient picker while keeping the recipient input manually editable.
+- `test/unit/RecipientOptions.test.ts`: added mapper and dedupe coverage.
+- `test/integration/LocalWebServer.test.ts`: added recipient-options API coverage and manual fallback scheduling coverage.
+- `README.md`, `docs/project_state.md`, `docs/file_guide.md`, `docs/bug_log.md`, and `docs/implementation_log.md`: updated for Chunk 10.
+
+### Commands Run
+
+- Extracted the Chunk 10 section from `docs/WhatsApp_Send_Later_Codex_Implementation_Plan_HE.docx`.
+- Inspected installed Baileys typings under `node_modules/@whiskeysockets/baileys/lib/Types/Events.d.ts`, `Contact.d.ts`, and `Chat.d.ts`.
+- `npm.cmd run typecheck` -> failed once because the new Baileys chat mapper input type was narrower than installed Baileys nullable/unknown chat fields.
+- `npm.cmd run typecheck` -> passed after widening the mapper input and filtering unusable values centrally.
+- `npm.cmd test` -> failed once because two fake Unix timestamp expectations in `RecipientOptions.test.ts` used the wrong UTC date.
+- `npm.cmd test` -> passed after correcting the expected UTC timestamps; 14 test files, 68 tests.
+- `npm.cmd run build` -> passed.
+
+### Verification
+
+- Typecheck passed.
+- Build passed.
+- Unit and integration tests passed:
+  - contact event data maps to a recipient option with normalized phone number and individual JID.
+  - recent chat event data maps to a recipient option with last-seen timestamp.
+  - group JIDs are ignored.
+  - duplicate chat/contact records are deduped by JID and contact display names are preferred.
+  - `/api/recipients` returns optional recipient suggestions from the connection controller.
+  - manual phone-number scheduling still succeeds when recipient suggestions are empty.
+  - existing scheduling, retry, worker, web API, and WhatsApp adapter tests still pass.
+
+### Manual Test
+
+- No live WhatsApp QR, connection, contact sync, or message delivery test was performed for Chunk 10.
+
+### Known Limitations
+
+- Recipient suggestions depend on Baileys emitting history/chat/contact events during the current web process. If no data arrives, the picker remains empty and manual number entry is the intended fallback.
+- Recipient suggestions are in memory only and are not persisted across web server restarts.
+- Only individual phone-number JIDs are accepted. Groups and arbitrary JIDs remain unsupported.
+- The web UI WhatsApp connection and `schedule:worker` are still separate processes until a later service/worker chunk. Do not use both WhatsApp connection paths at once with the same `auth/` session.

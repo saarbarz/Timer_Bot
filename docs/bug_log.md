@@ -10,7 +10,8 @@ Track open and resolved bugs by chunk or version.
 
 - True exactly-once WhatsApp delivery cannot be guaranteed if the provider accepts a message and the process crashes before SQLite records `sent`.
 - Chunk 8 stale-processing recovery uses a timeout to recover crash-before-send rows, but it cannot distinguish that case from the known hard case where WhatsApp accepted a message immediately before the crash.
-- Chunk 9 web UI is localhost-only and does not replace the foreground scheduler worker process or a future 24/7 deployment setup.
+- Chunk 9/10 web UI is localhost-only and does not replace the foreground scheduler worker process or a future 24/7 deployment setup.
+- Until the future long-running service/worker chunk, the web UI WhatsApp connection and `schedule:worker` are separate Baileys processes using the same local `auth/` session. Running both connection paths at once can produce `needs_relink` / `not_connected`; use the web UI for scheduling and one foreground worker for sending.
 
 ## Resolved Bugs
 

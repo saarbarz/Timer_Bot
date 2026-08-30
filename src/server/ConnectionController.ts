@@ -1,13 +1,14 @@
 import qrcode from "qrcode-terminal";
 
 import { BaileysWhatsAppAdapter } from "../whatsapp/BaileysWhatsAppAdapter.js";
-import type { WhatsAppConnectionStatus } from "../whatsapp/WhatsAppAdapter.js";
+import type { RecipientOption, WhatsAppConnectionStatus } from "../whatsapp/WhatsAppAdapter.js";
 
 export interface ConnectionController {
   connect(): Promise<void>;
   disconnect(): Promise<void>;
   getStatus(): WhatsAppConnectionStatus;
   getQrTerminal(): string | undefined;
+  getRecipientOptions(): RecipientOption[];
 }
 
 export function createBaileysConnectionController(): ConnectionController {
@@ -32,6 +33,9 @@ export function createBaileysConnectionController(): ConnectionController {
     },
     getQrTerminal(): string | undefined {
       return latestQrTerminal;
+    },
+    getRecipientOptions(): RecipientOption[] {
+      return adapter.getRecipientOptions();
     }
   };
 }

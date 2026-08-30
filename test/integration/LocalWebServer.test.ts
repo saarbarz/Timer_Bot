@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ConnectionController } from "../../src/server/ConnectionController.js";
 import { createLocalWebServer } from "../../src/server/LocalWebServer.js";
+import type { RecipientOption } from "../../src/whatsapp/WhatsAppAdapter.js";
 
 interface TestContext {
   readonly tempDir: string;
@@ -25,6 +26,7 @@ class FakeConnectionController implements ConnectionController {
 
   private status: ReturnType<ConnectionController["getStatus"]> = "idle";
   private qr: string | undefined;
+  private recipientOptions: RecipientOption[] = [];
 
   getStatus(): ReturnType<ConnectionController["getStatus"]> {
     return this.status;
@@ -32,6 +34,14 @@ class FakeConnectionController implements ConnectionController {
 
   getQrTerminal(): string | undefined {
     return this.qr;
+  }
+
+  getRecipientOptions(): RecipientOption[] {
+    return this.recipientOptions;
+  }
+
+  setRecipientOptions(recipientOptions: RecipientOption[]): void {
+    this.recipientOptions = recipientOptions;
   }
 }
 
@@ -83,6 +93,7 @@ describe("Local web server", () => {
     expect(response.status).toBe(200);
     expect(html).toContain("Timer Bot");
     expect(html).toContain("Schedule Message");
+    expect(html).toContain("recipientOptions");
   });
 
   it("creates, lists, updates, and cancels scheduled messages through the API", async () => {
@@ -144,6 +155,49 @@ describe("Local web server", () => {
     });
     expect(emptyText.status).toBe(400);
     expect(emptyText.body).toMatchObject({ errorCode: "empty_text" });
+  });
+
+  it("exposes optional recipient options and still accepts manual recipients when empty", async () => {
+    current().connection.setRecipientOptions([
+      {
+        displayName: "Recent Person",
+        recipient: {
+          phoneNumber: "972501234567",
+          jid: "972501234567@s.whatsapp.net"
+        },
+        source: "chat",
+        lastSeenAtUtc: "2026-12-15T09:00:00.000Z"
+      }
+    ]);
+
+    const recipients = await api("GET", "/api/recipients");
+    expect(recipients.status).toBe(200);
+    expect(recipients.body.recipients).toEqual([
+      {
+        displayName: "Recent Person",
+        recipient: "972501234567",
+        jid: "972501234567@s.whatsapp.net",
+        source: "chat",
+        lastSeenAtUtc: "2026-12-15T09:00:00.000Z"
+      }
+    ]);
+
+    current().connection.setRecipientOptions([]);
+    const emptyRecipients = await api("GET", "/api/recipients");
+    expect(emptyRecipients.body).toEqual({ recipients: [] });
+
+    const created = await api("POST", "/api/messages", {
+      recipient: "+972509999999",
+      text: "manual fallback",
+      scheduledAtLocal: "2026-12-15T12:00",
+      timezone: "Asia/Jerusalem"
+    });
+    expect(created.status).toBe(201);
+    expect(created.body.message).toMatchObject({
+      recipient: "972509999999",
+      text: "manual fallback",
+      status: "pending"
+    });
   });
 
   it("exposes connection status and QR through memory-only endpoints", async () => {
