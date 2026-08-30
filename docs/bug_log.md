@@ -15,11 +15,12 @@ Track open and resolved bugs by chunk or version.
 - Database backups intentionally exclude WhatsApp auth/session state. If auth state is ever backed up manually, it must be protected separately as account-session credential material.
 - Non-local UI/API exposure requires `UI_AUTH_PASSWORD`; this is still single-user Basic auth, not multi-user access control.
 - Public or multi-user deployment is not approved on the current architecture. Before public hosting, redesign around a local sender agent that holds WhatsApp auth/session state locally and a cloud scheduler/control plane that does not centralize WhatsApp session keys.
-- Chunk 13 automated tests prove local isolation logic with fake adapters only. Live two-session stability, reconnect behavior, and revocation behavior still require two separate real WhatsApp test accounts/devices.
+- Chunk 13 automated tests prove local isolation logic with fake adapters. User reported the basic manual test worked on 2026-08-30, but optional unlink/relink isolation remains unconfirmed.
 
 ## Resolved Bugs
 
 - Post-Chunk 11: scheduled messages created through the browser did not send after attempting to run `npm.cmd run service` because an older `npm.cmd run web` process was still bound to `127.0.0.1:3000`. Root cause was that service startup hit `EADDRINUSE`, while the browser kept talking to the old web-only process, which has no scheduler worker. Fixed by making service startup reject cleanly on listen errors, close the opened DB, and print an actionable occupied-port message.
+- Post-Chunk 13: the phone-number/recent-recipient field could jump while the UI refreshed. Root cause was periodic connection refresh rebuilding the recipient datalist while the input was focused. Fixed by skipping datalist rewrites while focused, avoiding unchanged rewrites, and stabilizing form/hint layout.
 - Chunk 8: `schedule:list` showed only canonical UTC fields like `scheduledAtUtc`, which looked three hours earlier than the user's Asia/Jerusalem scheduled time. Fixed by adding local display fields such as `scheduledAtLocal`, `sentAtLocal`, and `nextAttemptAtLocal` before the UTC audit fields.
 - Chunk 0: PowerShell blocks `npm.ps1`, but `npm.cmd` works. This is documented in `README.md`, `docs/project_state.md`, and `docs/implementation_log.md`.
 - Chunk 1: Initial attempt to chain npm install commands with `&&` failed because this PowerShell version rejected it. Re-ran the installs as separate commands.

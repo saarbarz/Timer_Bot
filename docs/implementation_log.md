@@ -1027,7 +1027,7 @@ Status: documented.
 
 ## Chunk 13 - Multi-user Spike
 
-Status: automated implementation complete; manual two-account WhatsApp verification pending.
+Status: completed for automated implementation and basic manual verification.
 
 ### Scope
 
@@ -1085,9 +1085,9 @@ Status: automated implementation complete; manual two-account WhatsApp verificat
 
 ### Manual Test
 
-- No live two-account WhatsApp test was performed.
-- No real WhatsApp QR, connection, contact sync, unlink/relink, or delivery test was performed for Chunk 13.
-- Manual acceptance still requires two separate WhatsApp test accounts/devices.
+- User reported the Chunk 13 manual test worked on 2026-08-30.
+- No phone numbers, message text, QR payloads, auth/session files, or account details were recorded.
+- Optional unlink/relink isolation was not separately confirmed.
 
 ### Known Limitations
 
@@ -1095,3 +1095,30 @@ Status: automated implementation complete; manual two-account WhatsApp verificat
 - The normal service remains single-user unless `CHUNK13_MULTI_USER_SPIKE=1` is set.
 - Automated tests use fake adapters; they prove isolation logic but not live Baileys stability with two real sessions.
 - Resource measurements are exposed by `/api/metrics`, but real RAM/CPU/stability measurements require a manual run with two live sessions.
+- Optional unlink/relink isolation should still be tested before relying on the spike for broader product decisions.
+
+## Post-Chunk 13 UX Fix - Stable Recipient Input
+
+Status: implemented.
+
+### Root Cause
+
+- The UI refreshed WhatsApp connection state every few seconds.
+- Each connection refresh also rebuilt the recent-recipient `<datalist>`.
+- Rebuilding the datalist while the recipient input was focused could make the phone-number field/suggestion bar jump during use.
+
+### Files Changed
+
+- `src/server/localWebUiHtml.ts`: stopped rebuilding recipient options while the recipient field is focused, skipped unchanged datalist rewrites, stabilized form alignment, and reserved hint text height.
+- `docs/project_state.md`, `docs/implementation_log.md`, and `docs/bug_log.md`: documented the manual result and UX fix.
+
+### Commands Run
+
+- `npm.cmd run typecheck` -> passed.
+- `npm.cmd test -- test/integration/LocalWebServer.test.ts` -> passed; 1 test file, 8 tests.
+
+### Verification
+
+- Typecheck passed.
+- Local web server integration tests passed.
+- The recipient input no longer refreshes its datalist while the user is actively focused in the phone-number field.

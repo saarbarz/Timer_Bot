@@ -118,7 +118,7 @@ export const localWebUiHtml = String.raw`<!doctype html>
         display: grid;
         grid-template-columns: repeat(4, minmax(0, 1fr));
         gap: 12px;
-        align-items: end;
+        align-items: start;
       }
 
       label {
@@ -223,6 +223,8 @@ export const localWebUiHtml = String.raw`<!doctype html>
       }
 
       .hint {
+        display: block;
+        min-height: 16px;
         color: var(--muted);
         font-size: 12px;
       }
@@ -301,9 +303,11 @@ export const localWebUiHtml = String.raw`<!doctype html>
       const notice = document.querySelector("#notice");
       const messages = document.querySelector("#messages");
       const scheduleForm = document.querySelector("#scheduleForm");
+      const recipientInput = scheduleForm.elements.recipient;
       const recipientOptions = document.querySelector("#recipientOptions");
       const recipientHint = document.querySelector("#recipientHint");
       const userSelect = document.querySelector("#userSelect");
+      let recipientOptionsSignature = "";
 
       document.querySelector("#connectButton").addEventListener("click", connectWhatsApp);
       document.querySelector("#refreshConnectionButton").addEventListener("click", refreshConnection);
@@ -352,7 +356,16 @@ export const localWebUiHtml = String.raw`<!doctype html>
 
       async function refreshRecipients() {
         const response = await api(userPath("/api/recipients"));
-        recipientOptions.replaceChildren(...response.recipients.map(renderRecipientOption));
+        const nextSignature = JSON.stringify(response.recipients.map((recipient) => [
+          recipient.recipient,
+          recipient.displayName,
+          recipient.source,
+          recipient.lastSeenAtUtc
+        ]));
+        if (document.activeElement !== recipientInput && nextSignature !== recipientOptionsSignature) {
+          recipientOptions.replaceChildren(...response.recipients.map(renderRecipientOption));
+          recipientOptionsSignature = nextSignature;
+        }
         recipientHint.textContent = response.recipients.length === 0 ? "Recent recipients will appear here when available." : "";
       }
 

@@ -2,9 +2,9 @@
 
 ## Current Position
 
-- Current chunk: Chunk 13 - Multi-user spike automated implementation is complete; manual two-account WhatsApp verification is pending.
-- Last completed chunk: Chunk 12 - Security Hardening.
-- Next allowed chunk: Chunk 13 manual two-account verification. Do not move to Chunk 14 until manual acceptance is complete or explicitly waived.
+- Current chunk: Chunk 13 - Multi-user spike basic manual verification is complete; optional unlink/relink isolation remains unconfirmed.
+- Last completed chunk: Chunk 13 - Multi-user spike.
+- Next allowed chunk: Chunk 14 - Product Gate / Go-No-Go report.
 - WhatsApp code status: Baileys connection adapter exists, manual QR/device linking was confirmed, one-shot text sending behind `WhatsAppAdapter` was confirmed by real manual send tests, scheduled WhatsApp delivery was confirmed by real manual test, and reconnect lifecycle lives in `ConnectionManager`.
 
 ## Environment
@@ -84,6 +84,7 @@
 - Chunk 13 `UserSessionManager` creates separate managed WhatsApp adapters/controllers per fixed user id and records sanitized session metrics.
 - Chunk 13 service mode can run one scheduler worker per fixed local user when the opt-in spike flag is enabled.
 - Chunk 13 local UI/API exposes a local-user selector, `/api/users`, and sanitized `/api/metrics`.
+- Post-Chunk 13 UI stabilization avoids rebuilding the recent-recipient datalist while the recipient field is focused, preventing the phone-number field from jumping during use.
 
 ## Resume Instructions
 
@@ -107,7 +108,9 @@
 18. Post-Chunk 11 occupied-port fix is complete and committed/pushed.
 19. Chunk 12 security hardening is complete and verified by typecheck, full test suite, build, HTTP auth/path exposure tests, backup exclusion tests, rate-limit tests, audit sanitization tests, secret-pattern scan, and diff check. Docker image build smoke still could not start because Docker Desktop/Linux engine was not running.
 20. Chunk 13 design was documented and committed/pushed in `53efad9`.
-21. Chunk 13 automated implementation is complete and verified by typecheck, full test suite, and build. Manual two-account WhatsApp verification is still pending and requires two separate WhatsApp test accounts/devices.
+21. Chunk 13 automated implementation is complete and verified by typecheck, full test suite, and build.
+22. User reported the Chunk 13 manual test worked on 2026-08-30. No phone numbers, message text, QR payloads, or session details were recorded. Optional unlink/relink isolation was not separately confirmed.
+23. Post-Chunk 13 recipient-field jump fix is implemented and verified by typecheck plus local web server integration tests.
 
 ## Important Caveat
 
