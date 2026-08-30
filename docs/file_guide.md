@@ -86,4 +86,5 @@
 - `docs/file_guide.md`: explanation of important project files.
 - `docs/bug_log.md`: open and resolved bugs by chunk/version.
 - `docs/future_architecture_plan.md`: public-use safety gate and future local sender agent / cloud scheduler architecture direction.
+- `docs/chunk13_multi_user_spike_design.md`: local-only two-session Chunk 13 design spike, acceptance mapping, metrics, risks, and implementation order.
 - `docs/WhatsApp_Send_Later_Codex_Implementation_Plan_HE.docx`: source implementation plan copied from the user-provided document.

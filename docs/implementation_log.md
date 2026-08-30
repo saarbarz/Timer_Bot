@@ -1024,3 +1024,24 @@ Status: documented.
 ### Verification
 
 - Documentation-only change. No runtime behavior changed.
+
+## Chunk 13 - Multi-user Spike Design
+
+Status: design started; runtime implementation not started.
+
+### Scope
+
+- Start Chunk 13 as a design spike because the source plan's multi-user spike triggers the public-use safety gate.
+- Keep the spike local-only and limited to exactly two fixed internal test users.
+- Define how per-user auth paths, scheduler rows, workers, metrics, and unlink/relink isolation should work before code changes.
+- Do not add signup, billing, cloud hosting, production auth, SaaS infrastructure, public deployment, or arbitrary user ids.
+
+### Files Changed
+
+- `docs/chunk13_multi_user_spike_design.md`: added the two-session local spike design and implementation order.
+- `docs/project_state.md`: updated current position, architecture decisions, and resume instructions for Chunk 13 design.
+- `docs/file_guide.md`: documented the new Chunk 13 design file.
+
+### Verification
+
+- Documentation/design-only change. No runtime behavior changed.

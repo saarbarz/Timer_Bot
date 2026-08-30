@@ -2,9 +2,9 @@
 
 ## Current Position
 
-- Current chunk: Chunk 12 - Security Hardening is complete.
+- Current chunk: Chunk 13 - Multi-user spike design is started.
 - Last completed chunk: Chunk 12 - Security Hardening.
-- Next allowed chunk: Chunk 13.
+- Next allowed chunk: Chunk 13 implementation, after the design spike boundaries are accepted.
 - WhatsApp code status: Baileys connection adapter exists, manual QR/device linking was confirmed, one-shot text sending behind `WhatsAppAdapter` was confirmed by real manual send tests, scheduled WhatsApp delivery was confirmed by real manual test, and reconnect lifecycle lives in `ConnectionManager`.
 
 ## Environment
@@ -77,27 +77,30 @@
 - Docker runtime now runs as the non-root `node` user after creating `/app/data` and `/app/auth`.
 - `src/index.ts` uses `pathToFileURL` for direct-execution detection so startup smoke output works with Windows paths.
 - Future public or multi-user deployment must not be built by simply exposing the current local service with stronger auth. The plan now includes a public-use safety gate in `docs/future_architecture_plan.md`: keep WhatsApp auth/session state on a user-run local sender agent, and use any future cloud component only as a scheduler/control plane.
+- Chunk 13 starts as a local-only two-session design spike in `docs/chunk13_multi_user_spike_design.md`. Runtime implementation is intentionally not started until the user accepts the design boundaries.
 
 ## Resume Instructions
 
 1. Read `docs/documentation_instructions.md`.
 2. Read `docs/implementation_log.md`.
 3. Read `docs/future_architecture_plan.md` before any public, multi-user, cloud, or remote-agent planning.
-4. Run `git status --short`.
-5. Chunk 1 manual QR verification is complete. The user confirmed `connection=open` and that WhatsApp shows a new linked device on 2026-08-24.
-6. Chunk 2 manual send verification is complete. The user confirmed one real test message arrived successfully on 2026-08-25.
-7. Chunk 3 manual restart/no-new-QR/send verification is complete. The user confirmed a real send succeeded on 2026-08-27 after reconnecting without a new QR.
-8. Chunk 4 SQLite scheduling CRUD is complete and verified by integration tests.
-9. Chunk 5 worker atomic claim/idempotency is complete and verified by SQLite integration tests.
-10. Post-Chunk 5 bug hunt is complete. Startup smoke commands and safe invalid `wa:send` validation paths were reverified.
-11. Chunk 6 retry/failure policy is complete and verified by SQLite integration tests.
-12. Chunk 7 automated implementation is complete and verified by tests/build/safe CLI smoke. User confirmed one real scheduled WhatsApp delivery worked on 2026-08-27.
-13. Chunk 8 automated implementation is complete and verified by tests/build/safe CLI smoke. User confirmed the Chunk 8 manual restart test worked on 2026-08-28 after stopping the foreground worker once with Ctrl+C and restarting it. User also confirmed the Chunk 8 manual cancel test worked on 2026-08-28: the message was not sent and `schedule:list` showed it was cancelled.
-14. Chunk 9 local web UI is complete and verified by API tests, UI smoke, typecheck, tests, build, and a localhost server smoke.
-15. Chunk 10 recipient UX is complete and verified by mapper tests, local web API tests, typecheck, full test suite, and build.
-16. Chunk 11 single-user deployment is complete and verified by typecheck, full test suite, build, health redaction coverage, process-style restart persistence coverage, and no-duplicate-sent restart coverage. Docker CLI was present, but Docker Desktop/Linux engine was not running, so image build smoke could not start.
-17. Post-Chunk 11 occupied-port fix is complete and committed/pushed.
-18. Chunk 12 security hardening is complete and verified by typecheck, full test suite, build, HTTP auth/path exposure tests, backup exclusion tests, rate-limit tests, audit sanitization tests, secret-pattern scan, and diff check. Docker image build smoke still could not start because Docker Desktop/Linux engine was not running.
+4. Read `docs/chunk13_multi_user_spike_design.md` before implementing Chunk 13.
+5. Run `git status --short`.
+6. Chunk 1 manual QR verification is complete. The user confirmed `connection=open` and that WhatsApp shows a new linked device on 2026-08-24.
+7. Chunk 2 manual send verification is complete. The user confirmed one real test message arrived successfully on 2026-08-25.
+8. Chunk 3 manual restart/no-new-QR/send verification is complete. The user confirmed a real send succeeded on 2026-08-27 after reconnecting without a new QR.
+9. Chunk 4 SQLite scheduling CRUD is complete and verified by integration tests.
+10. Chunk 5 worker atomic claim/idempotency is complete and verified by SQLite integration tests.
+11. Post-Chunk 5 bug hunt is complete. Startup smoke commands and safe invalid `wa:send` validation paths were reverified.
+12. Chunk 6 retry/failure policy is complete and verified by SQLite integration tests.
+13. Chunk 7 automated implementation is complete and verified by tests/build/safe CLI smoke. User confirmed one real scheduled WhatsApp delivery worked on 2026-08-27.
+14. Chunk 8 automated implementation is complete and verified by tests/build/safe CLI smoke. User confirmed the Chunk 8 manual restart test worked on 2026-08-28 after stopping the foreground worker once with Ctrl+C and restarting it. User also confirmed the Chunk 8 manual cancel test worked on 2026-08-28: the message was not sent and `schedule:list` showed it was cancelled.
+15. Chunk 9 local web UI is complete and verified by API tests, UI smoke, typecheck, tests, build, and a localhost server smoke.
+16. Chunk 10 recipient UX is complete and verified by mapper tests, local web API tests, typecheck, full test suite, and build.
+17. Chunk 11 single-user deployment is complete and verified by typecheck, full test suite, build, health redaction coverage, process-style restart persistence coverage, and no-duplicate-sent restart coverage. Docker CLI was present, but Docker Desktop/Linux engine was not running, so image build smoke could not start.
+18. Post-Chunk 11 occupied-port fix is complete and committed/pushed.
+19. Chunk 12 security hardening is complete and verified by typecheck, full test suite, build, HTTP auth/path exposure tests, backup exclusion tests, rate-limit tests, audit sanitization tests, secret-pattern scan, and diff check. Docker image build smoke still could not start because Docker Desktop/Linux engine was not running.
+20. Chunk 13 multi-user spike design has started. Implementation should not begin until the design boundaries are accepted.
 
 ## Important Caveat
 
