@@ -27,13 +27,14 @@ npm.cmd run schedule:update-time -- <id> --in 90s --timezone <IANA timezone>
 npm.cmd run schedule:worker
 npm.cmd run web
 npm.cmd run service
+npm.cmd run backup:db
 ```
 
 The npm scripts invoke TypeScript through `node --import tsx` for reliable process exit behavior on this Windows setup.
 
 ## Current Scope
 
-The project has completed Chunk 11: Single-user Deployment. It can reuse the saved WhatsApp linked-device session, send one explicit text message, create/list/cancel/reschedule messages in SQLite, run a deterministic scheduler worker against a fakeable sender, apply bounded retry/terminal failure handling, run a process-mode scheduler worker wired to the real Baileys adapter, recover stale `processing` rows, serve a local browser UI with a thin HTTP API over the existing scheduling services, show optional recent recipient suggestions when Baileys supplies chat/contact data, and run a single long-lived local service that shares one WhatsApp adapter between UI and worker polling. The next allowed chunk is Chunk 12.
+The project has completed Chunk 12: Security Hardening. It can reuse the saved WhatsApp linked-device session, send one explicit text message, create/list/cancel/reschedule messages in SQLite, run a deterministic scheduler worker against a fakeable sender, apply bounded retry/terminal failure handling, run a process-mode scheduler worker wired to the real Baileys adapter, recover stale `processing` rows, serve a local browser UI with a thin HTTP API over the existing scheduling services, show optional recent recipient suggestions when Baileys supplies chat/contact data, run a single long-lived local service that shares one WhatsApp adapter between UI and worker polling, and apply local security hardening around auth state, logs, backups, non-local UI exposure, and send rate limits. The next allowed chunk is Chunk 13.
 
 Post-Chunk 5 bug-hunt fixes are also complete: the startup entry point now prints correctly on Windows, `wa:send` validates invalid input before loading or connecting WhatsApp transport, and safe smoke commands have been reverified.
 
@@ -174,5 +175,25 @@ Example:
 
 ```powershell
 docker build -t timer-bot .
-docker run --restart unless-stopped -p 3000:3000 -v timer-bot-data:/app/data -v timer-bot-auth:/app/auth timer-bot
+docker run --restart unless-stopped -p 3000:3000 -e UI_AUTH_PASSWORD="<strong-local-password>" -v timer-bot-data:/app/data -v timer-bot-auth:/app/auth timer-bot
 ```
+
+## Chunk 12 Security Notes
+
+WhatsApp auth state is account-level credential material. Keep `auth/`, `data/`, `logs/`, and `backups/` local and untracked.
+
+If `BIND_HOST` is anything other than `127.0.0.1`, `localhost`, or `::1`, the service requires `UI_AUTH_PASSWORD`. The UI/API then use HTTP Basic auth with username `timerbot` unless `UI_AUTH_USERNAME` is set.
+
+The default send cap is controlled by:
+
+```text
+MAX_SCHEDULED_SENDS_PER_MINUTE=10
+```
+
+Database-only backup:
+
+```powershell
+npm.cmd run backup:db
+```
+
+This backs up SQLite only. It does not back up WhatsApp auth/session state.

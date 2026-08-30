@@ -14,7 +14,9 @@ ENV DATABASE_PATH=/app/data/timer-bot.sqlite
 COPY --from=deps /app/node_modules ./node_modules
 COPY package.json package-lock.json tsconfig.json ./
 COPY src ./src
+RUN mkdir -p /app/data /app/auth && chown -R node:node /app
 EXPOSE 3000
 VOLUME ["/app/data", "/app/auth"]
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 CMD node -e "fetch('http://127.0.0.1:' + (process.env.PORT || '3000') + '/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+USER node
 CMD ["npm", "run", "service"]

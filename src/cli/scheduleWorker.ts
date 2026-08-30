@@ -1,5 +1,8 @@
+import { consoleAuditLogger } from "../audit/AuditLogger.js";
 import { openAppDatabase } from "../db/Database.js";
+import { appConfig } from "../config/AppConfig.js";
 import { ScheduledMessageRepository } from "../db/ScheduledMessageRepository.js";
+import { RateLimitedMessageSender } from "../scheduler/RateLimitedMessageSender.js";
 import { SchedulerWorker } from "../scheduler/SchedulerWorker.js";
 import { WhatsAppMessageSender } from "../scheduler/WhatsAppMessageSender.js";
 import { BaileysWhatsAppAdapter } from "../whatsapp/BaileysWhatsAppAdapter.js";
@@ -32,7 +35,10 @@ await adapter.connect();
 await waitForConnected(adapter);
 
 const repository = new ScheduledMessageRepository(db);
-const worker = new SchedulerWorker(repository, new WhatsAppMessageSender(adapter), {
+const sender = new RateLimitedMessageSender(new WhatsAppMessageSender(adapter), {
+  maxSendsPerMinute: appConfig.maxScheduledSendsPerMinute
+});
+const worker = new SchedulerWorker(repository, sender, {
   staleProcessingMs: args.value.staleProcessingMs
 });
 
@@ -57,6 +63,11 @@ while (true) {
         .filter((part): part is string => part !== undefined)
         .join(" ")
     );
+    if (result.messageId !== undefined && result.sent > 0) {
+      consoleAuditLogger({ event: "send_success", messageId: result.messageId, status: result.finalStatus });
+    } else if (result.messageId !== undefined && result.sendFailed > 0) {
+      consoleAuditLogger({ event: "send_failure", messageId: result.messageId, status: result.finalStatus });
+    }
   }
 
   await new Promise<void>((resolve) => {

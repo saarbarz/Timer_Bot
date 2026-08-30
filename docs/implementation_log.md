@@ -921,3 +921,77 @@ Status: completed.
 
 - The service startup path no longer emits an unhandled server error for occupied ports.
 - The regression test proves a second service on an already-used port rejects with `EADDRINUSE`.
+
+## Chunk 12 - Security Hardening
+
+Status: completed.
+
+### Scope
+
+- Treat WhatsApp auth state as high-value account-session credential material.
+- Harden HTTP exposure so auth/data paths are not served and non-local UI binds require Basic auth.
+- Keep full message text out of default logs/audit events.
+- Add database-only backup behavior that excludes the WhatsApp auth directory.
+- Add an internal per-minute scheduled-send rate limit.
+- Add sanitized audit events for schedule creation, cancellation, send success, and send failure.
+- Do not add multi-user accounts, roles, cloud auth, or SaaS infrastructure.
+
+### Files Changed
+
+- `.gitignore`: added `backups/`.
+- `Dockerfile`: creates `/app/data` and `/app/auth`, assigns them to the `node` user, and runs the container as non-root.
+- `package.json`: added `backup:db`.
+- `src/audit/AuditLogger.ts`: added sanitized audit logging.
+- `src/backup/DatabaseBackup.ts`: added SQLite-only backup helper.
+- `src/cli/backupDatabase.ts`: added database backup CLI entry point.
+- `src/cli/schedule.ts`: emits sanitized `schedule_created` audit events.
+- `src/cli/scheduleCancel.ts`: emits sanitized `cancelled` audit events.
+- `src/cli/scheduleWorker.ts`: wraps real sends in the per-minute rate limiter and emits sanitized send audit events.
+- `src/config/AppConfig.ts`: added UI auth, backup directory, and max scheduled sends per minute config.
+- `src/scheduler/RateLimitedMessageSender.ts`: added internal send rate limiter.
+- `src/server/HttpAuth.ts`: added Basic auth helpers and non-loopback bind guard.
+- `src/server/LocalWebServer.ts`: added optional Basic auth for UI/API routes while leaving sanitized `/health` available for health checks.
+- `src/server/SingleUserService.ts`: enforces non-local auth configuration, passes auth/audit to the web server, and rate-limits scheduled sends.
+- `test/integration/DatabaseBackup.test.ts`: verifies SQLite backup does not copy auth state.
+- `test/integration/LocalWebServer.test.ts`: verifies auth/data paths are not served and Basic auth protects UI/API when configured.
+- `test/integration/SingleUserService.test.ts`: verifies non-loopback bind requires auth and send audit events are sanitized.
+- `test/unit/AuditLogger.test.ts`: verifies audit log sanitization.
+- `test/unit/RateLimitedMessageSender.test.ts`: verifies per-minute send limiting.
+- `README.md`, `docs/project_state.md`, `docs/file_guide.md`, `docs/bug_log.md`, and `docs/implementation_log.md`: updated for Chunk 12.
+
+### Commands Run
+
+- Extracted the Chunk 12 section from `docs/WhatsApp_Send_Later_Codex_Implementation_Plan_HE.docx`.
+- `npm.cmd run typecheck` -> passed.
+- `npm.cmd test -- test/integration/LocalWebServer.test.ts test/integration/SingleUserService.test.ts test/integration/DatabaseBackup.test.ts test/unit/RateLimitedMessageSender.test.ts` -> passed; 4 test files, 13 tests.
+- `npm.cmd test -- test/integration/LocalWebServer.test.ts test/integration/DatabaseBackup.test.ts` -> passed; 2 test files, 8 tests after cleaning scanner literals.
+- `npm.cmd test` -> passed; 18 test files, 77 tests.
+- `npm.cmd run build` -> passed.
+- Secret-pattern scan with `rg` for known auth/session/key payload markers, excluding generated directories, returned no matches.
+- `docker build -t timer-bot:chunk12-smoke .` -> could not start because Docker Desktop/Linux engine was not running: Docker API pipe `dockerDesktopLinuxEngine` was unavailable.
+- `git diff --check` -> passed with CRLF warnings only.
+
+### Verification
+
+- Typecheck passed.
+- Build passed.
+- Unit and integration tests passed:
+  - auth/data traversal-like paths return 404 and do not expose local generated files.
+  - Basic auth protects UI/API routes when configured.
+  - `/health` remains privacy-safe and does not expose QR, auth/session data, phone numbers, JIDs, or message text.
+  - non-loopback service binds require `UI_AUTH_PASSWORD`.
+  - database backups preserve SQLite data and do not copy auth files.
+  - scheduled sends are rate-limited per minute.
+  - audit events for schedule/send flows do not contain credentials, recipients, JIDs, QR payloads, or message text.
+  - existing scheduling, retry, stale recovery, web API, recipient option, service, and WhatsApp adapter tests still pass.
+
+### Manual Test
+
+- No live WhatsApp QR, connection, contact sync, or message delivery test was performed for Chunk 12.
+- Docker image build was not completed because the local Docker engine was not running.
+
+### Known Limitations
+
+- This is still single-user Basic auth and local/container hardening, not multi-user identity or authorization.
+- Database backup intentionally excludes WhatsApp auth/session state. If auth state is backed up manually, it must be protected separately.
+- Docker image build and real container restart verification still require Docker Desktop/Linux engine to be running.

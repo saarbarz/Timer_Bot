@@ -4,24 +4,27 @@
 
 - `package.json`: npm scripts, project metadata, runtime dependencies, and development dependencies.
 - `tsconfig.json`: strict TypeScript compiler configuration.
-- `.gitignore`: excludes dependencies, build output, local environment files, WhatsApp auth/session state including `auth_old/`, local data, logs, and IDE metadata.
+- `.gitignore`: excludes dependencies, build output, local environment files, WhatsApp auth/session state including `auth_old/`, local data, logs, local backups, and IDE metadata.
 - `.dockerignore`: excludes local/generated state and development metadata from Docker build context.
-- `Dockerfile`: single-user long-running service image with persistent `/app/data` and `/app/auth` volumes and a privacy-safe healthcheck.
+- `Dockerfile`: single-user long-running service image with persistent `/app/data` and `/app/auth` volumes, non-root runtime user, and a privacy-safe healthcheck.
 - `README.md`: setup and command reference.
 
 ## Source
 
 - `src/index.ts`: minimal application entry point, smoke-testable startup summary, and Windows-safe direct-execution detection.
+- `src/audit/AuditLogger.ts`: sanitized audit-event logger for schedule/create/cancel/send outcomes without credentials, recipients, JIDs, QR payloads, or message text.
+- `src/backup/DatabaseBackup.ts`: SQLite-only backup helper that writes database backups without copying WhatsApp auth/session state.
+- `src/cli/backupDatabase.ts`: `npm.cmd run backup:db` entry point for database-only backups.
 - `src/cli/gracefulShutdown.ts`: shared SIGINT/SIGTERM shutdown hook for CLI commands.
-- `src/cli/schedule.ts`: creates scheduled messages from CLI input and stores them in SQLite without connecting to WhatsApp.
+- `src/cli/schedule.ts`: creates scheduled messages from CLI input, stores them in SQLite without connecting to WhatsApp, and emits sanitized `schedule_created` audit events.
 - `src/cli/scheduleArgs.ts`: pure parser and relative-time resolver for schedule/list/cancel/worker CLI arguments.
-- `src/cli/scheduleCancel.ts`: cancels one pending scheduled message by id.
+- `src/cli/scheduleCancel.ts`: cancels one pending scheduled message by id and emits sanitized `cancelled` audit events.
 - `src/cli/scheduleList.ts`: lists scheduled messages with privacy-safe status/timestamp metadata only.
 - `src/cli/scheduleListFormat.ts`: formats schedule-list output with local timestamp fields plus canonical UTC fields, without recipient numbers or message text.
 - `src/cli/scheduleUpdateTime.ts`: reschedules one pending scheduled message using an absolute or relative time.
-- `src/cli/scheduleWorker.ts`: process-mode scheduler that connects to WhatsApp and polls SQLite for due messages to send.
+- `src/cli/scheduleWorker.ts`: process-mode scheduler that connects to WhatsApp, polls SQLite for due messages to send, applies the internal per-minute send limit, and emits sanitized send audit events.
 - `src/cli/waitForConnected.ts`: shared helper for waiting until a WhatsApp adapter reports `connected` or `needs_relink`.
-- `src/config/AppConfig.ts`: local configuration for default timezone, generated local paths, web/service ports, bind host, and service poll interval. It contains no credentials.
+- `src/config/AppConfig.ts`: local configuration for default timezone, generated local paths, web/service ports, bind host, service poll interval, UI auth username/password, send rate limit, and backup directory.
 - `src/domain/Clock.ts`: injectable clock abstraction for deterministic scheduling tests.
 - `src/domain/ScheduledMessage.ts`: scheduled message status values and domain shape, including optional `nextAttemptAtUtc` retry timing.
 - `src/domain/ScheduleService.ts`: scheduling CRUD service that validates recipient/text/time, converts local time to UTC, creates pending messages, lists messages, updates pending times, and cancels pending messages.
@@ -30,6 +33,7 @@
 - `src/db/Migrations.ts`: migration runner with `schema_migrations`.
 - `src/db/ScheduledMessageRepository.ts`: SQLite repository for scheduled message create/find/list/cancel/update-time operations, atomic due-message claiming, sent marking, retry scheduling, failed marking, and stale-processing recovery.
 - `src/scheduler/MessageSender.ts`: fakeable scheduled-message sender abstraction used by the worker.
+- `src/scheduler/RateLimitedMessageSender.ts`: internal per-minute scheduled-send limiter used by service and standalone worker.
 - `src/scheduler/RetryPolicy.ts`: retry/failure classification, default send backoff schedule, max-attempt defaults, unknown-failure behavior, and `last_error` sanitization.
 - `src/scheduler/SchedulerWorker.ts`: deterministic single-message worker that recovers stale `processing` rows, claims one due pending message, invokes `MessageSender`, marks successful sends as `sent`, schedules retryable failures, and marks terminal/max-attempt failures as `failed`.
 - `src/scheduler/WhatsAppMessageSender.ts`: adapts stored scheduled messages to the real `WhatsAppAdapter.sendText()` transport API.
@@ -39,6 +43,7 @@
 - `src/cli/waSend.ts`: manual one-shot CLI for validating a send request, lazy-loading the Baileys adapter only after validation passes, connecting to WhatsApp, and sending one text message to an explicit phone-number recipient.
 - `src/server/ConnectionController.ts`: in-memory connection/QR/recipient controller for the local web server, backed by `BaileysWhatsAppAdapter` in production and able to expose the managed adapter for the combined service.
 - `src/server/HealthStatus.ts`: privacy-safe health report builder for process liveness, DB reachability/migration state, and collapsed WhatsApp connection state.
+- `src/server/HttpAuth.ts`: HTTP Basic auth helpers and non-loopback bind guard for UI/API exposure.
 - `src/server/LocalWebServer.ts`: localhost HTTP request handler and server factory with JSON API routes over `ScheduleService`, connection status, QR display, optional recipient suggestions, and `/health`.
 - `src/server/localWebUiHtml.ts`: minimal local browser UI for connection status, QR display, schedule creation with optional recent recipient suggestions, listing, pending edits, and cancellation.
 - `src/server/SingleUserService.ts`: long-running single-user service runtime that opens/migrates SQLite, serves the local web UI/API, and polls the scheduler worker with one shared WhatsApp adapter.
@@ -55,16 +60,19 @@
 ## Tests
 
 - `test/unit/config.test.ts`: Chunk 0 smoke tests for config/startup wiring and the Windows direct-execution regression.
+- `test/integration/DatabaseBackup.test.ts`: Chunk 12 test proving database backup preserves SQLite data without copying auth files.
 - `test/integration/ScheduleService.sqlite.test.ts`: Chunk 4 integration tests against temporary SQLite databases for migrations, create/list/update/cancel rules, persistence after reopen, and timezone conversion.
 - `test/integration/SchedulerWorker.sqlite.test.ts`: Chunk 5 through Chunk 8 integration tests for due-message claiming, future/cancelled exclusion, successful sent marking, no duplicate sends, overdue restart behavior, cancelled-message exclusion, reschedule timing, stale-processing recovery, retry backoff, terminal failure, max attempts, recovery after retry, retry metadata cleanup, and migrating an existing Chunk 4 database.
-- `test/integration/LocalWebServer.test.ts`: Chunk 9 and Chunk 10 API/local UI smoke tests against a temporary SQLite database and fake connection controller, including optional recipient suggestions and manual fallback.
-- `test/integration/SingleUserService.test.ts`: Chunk 11 service tests for startup migration, health redaction, process-style restart persistence, and no duplicate send after a sent row is restarted.
+- `test/integration/LocalWebServer.test.ts`: Chunk 9 through Chunk 12 API/local UI smoke tests against a temporary SQLite database and fake connection controller, including optional recipient suggestions, manual fallback, Basic auth, health sanitization, and auth/data path exposure checks.
+- `test/integration/SingleUserService.test.ts`: Chunk 11 and Chunk 12 service tests for startup migration, health redaction, process-style restart persistence, no duplicate send after a sent row is restarted, non-loopback auth guard, occupied port handling, and sanitized send audit events.
+- `test/unit/AuditLogger.test.ts`: Chunk 12 test for sanitized audit logging.
 - `test/unit/BaileysConnectionState.test.ts`: Chunk 1 connection status transition tests.
 - `test/unit/BaileysReconnect.test.ts`: reconnect decision tests, including relink-required Baileys close codes.
 - `test/unit/BaileysEventHandlers.test.ts`: tests for event handler registration, credential save callback wiring, QR forwarding, and credential-save error reporting.
 - `test/unit/ConnectionManager.test.ts`: fake-timer tests for bounded reconnect backoff, no reconnect on relink-required closes, and shutdown timer cancellation.
 - `test/unit/RecipientNormalizer.test.ts`: Chunk 2 tests for phone-number normalization and group rejection.
 - `test/unit/RecipientOptions.test.ts`: Chunk 10 tests for Baileys chat/contact mapping, individual-recipient filtering, and dedupe by JID.
+- `test/unit/RateLimitedMessageSender.test.ts`: Chunk 12 test for per-minute scheduled-send limiting.
 - `test/unit/SendTextNow.test.ts`: Chunk 2 tests for validation without an adapter, empty text rejection, exactly-one adapter call on success, and transport exception mapping.
 - `test/unit/scheduleArgs.test.ts`: Chunk 7 and Chunk 8 tests for schedule/create/cancel/update-time/worker CLI argument parsing, `--in` relative time resolution, and stale-processing worker options.
 - `test/unit/scheduleListFormat.test.ts`: tests local timestamp formatting for `schedule:list` and guards against printing recipient or message text.

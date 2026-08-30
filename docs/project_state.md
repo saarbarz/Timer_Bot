@@ -2,9 +2,9 @@
 
 ## Current Position
 
-- Current chunk: Chunk 11 - Single-user Deployment is complete.
-- Last completed chunk: Chunk 11 - Single-user Deployment.
-- Next allowed chunk: Chunk 12.
+- Current chunk: Chunk 12 - Security Hardening is complete.
+- Last completed chunk: Chunk 12 - Security Hardening.
+- Next allowed chunk: Chunk 13.
 - WhatsApp code status: Baileys connection adapter exists, manual QR/device linking was confirmed, one-shot text sending behind `WhatsAppAdapter` was confirmed by real manual send tests, scheduled WhatsApp delivery was confirmed by real manual test, and reconnect lifecycle lives in `ConnectionManager`.
 
 ## Environment
@@ -23,7 +23,7 @@
 - Language: TypeScript with `strict: true`.
 - Test runner: Vitest.
 - SQLite library: `better-sqlite3@13.0.3`.
-- Local-only data paths are `auth/`, `auth_old/`, `data/`, and `logs/`.
+- Local-only data paths are `auth/`, `auth_old/`, `data/`, `logs/`, and `backups/`.
 - WhatsApp auth/session/data artifacts must remain untracked.
 - `.idea/`, `*.iml`, and `.venv/` are ignored for future safety, though some IntelliJ files were already staged before the project scaffold.
 - WhatsApp transport is behind `src/whatsapp/WhatsAppAdapter.ts`.
@@ -69,6 +69,12 @@
 - The service skips worker sends unless WhatsApp status is `connected`; degraded or relink-required states are reported through health instead of sending.
 - `/health` reports process liveness, DB reachability/migration state, and collapsed WhatsApp state without phone numbers, QR payloads, session data, message text, or auth details.
 - Docker packaging uses `/app/data` and `/app/auth` as persistent volumes and runs the combined service with `BIND_HOST=0.0.0.0`.
+- Chunk 12 treats WhatsApp auth state as account-session credential material and keeps it out of web static serving, logs, backups, and git tracking.
+- `backups/` is ignored; `npm.cmd run backup:db` backs up SQLite only and intentionally excludes the WhatsApp auth directory.
+- `BIND_HOST` values beyond `127.0.0.1`, `localhost`, or `::1` require `UI_AUTH_PASSWORD`; protected UI/API routes use HTTP Basic auth, while `/health` remains unauthenticated and sanitized for health checks.
+- `MAX_SCHEDULED_SENDS_PER_MINUTE` defaults to 10 and rate-limits scheduled sends in both the combined service and standalone worker.
+- Sanitized audit events are emitted for `schedule_created`, `cancelled`, `send_success`, and `send_failure` without credentials, phone numbers, JIDs, QR payloads, or message text.
+- Docker runtime now runs as the non-root `node` user after creating `/app/data` and `/app/auth`.
 - `src/index.ts` uses `pathToFileURL` for direct-execution detection so startup smoke output works with Windows paths.
 
 ## Resume Instructions
@@ -88,6 +94,8 @@
 13. Chunk 9 local web UI is complete and verified by API tests, UI smoke, typecheck, tests, build, and a localhost server smoke.
 14. Chunk 10 recipient UX is complete and verified by mapper tests, local web API tests, typecheck, full test suite, and build.
 15. Chunk 11 single-user deployment is complete and verified by typecheck, full test suite, build, health redaction coverage, process-style restart persistence coverage, and no-duplicate-sent restart coverage. Docker CLI was present, but Docker Desktop/Linux engine was not running, so image build smoke could not start.
+16. Post-Chunk 11 occupied-port fix is complete and committed/pushed.
+17. Chunk 12 security hardening is complete and verified by typecheck, full test suite, build, HTTP auth/path exposure tests, backup exclusion tests, rate-limit tests, audit sanitization tests, secret-pattern scan, and diff check. Docker image build smoke still could not start because Docker Desktop/Linux engine was not running.
 
 ## Important Caveat
 

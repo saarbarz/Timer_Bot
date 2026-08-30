@@ -12,6 +12,8 @@ Track open and resolved bugs by chunk or version.
 - Chunk 8 stale-processing recovery uses a timeout to recover crash-before-send rows, but it cannot distinguish that case from the known hard case where WhatsApp accepted a message immediately before the crash.
 - `npm.cmd run web` and `npm.cmd run schedule:worker` remain separate legacy commands. Running both WhatsApp connection paths at once can produce `needs_relink` / `not_connected`; prefer `npm.cmd run service` for long-running single-user use.
 - Docker image build smoke requires Docker Desktop/Linux engine to be running. On 2026-08-30 the Docker CLI existed, but the engine pipe was unavailable.
+- Database backups intentionally exclude WhatsApp auth/session state. If auth state is ever backed up manually, it must be protected separately as account-session credential material.
+- Non-local UI/API exposure requires `UI_AUTH_PASSWORD`; this is still single-user Basic auth, not multi-user access control.
 
 ## Resolved Bugs
 

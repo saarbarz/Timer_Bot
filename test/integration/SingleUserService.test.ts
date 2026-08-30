@@ -118,9 +118,29 @@ describe("Single-user service", () => {
     }
   });
 
+  it("requires Basic auth configuration for non-local bind hosts", async () => {
+    const context = createContext();
+    const adapter = new FakeWhatsAppAdapter("idle");
+
+    await expect(
+      startSingleUserService({
+        adapter,
+        connection: new FakeConnectionController(adapter),
+        databasePath: context.dbPath,
+        host: "0.0.0.0",
+        port: 0,
+        connectOnStart: false,
+        auth: {
+          username: "timerbot"
+        }
+      })
+    ).rejects.toThrow("UI_AUTH_PASSWORD is required");
+  });
+
   it("keeps SQLite data across process-style restarts and does not duplicate a sent row", async () => {
     const context = createContext();
     insertDueMessage(context.dbPath, "restart-test-1");
+    const audit = vi.fn();
 
     const firstAdapter = new FakeWhatsAppAdapter("connected");
     context.service = await startSingleUserService({
@@ -129,11 +149,14 @@ describe("Single-user service", () => {
       databasePath: context.dbPath,
       port: 0,
       pollMs: 25,
-      connectOnStart: false
+      connectOnStart: false,
+      audit
     });
 
     await waitForMessageStatus(context.dbPath, "restart-test-1", "sent");
     expect(firstAdapter.sentMessages).toHaveLength(1);
+    expect(audit).toHaveBeenCalledWith(expect.objectContaining({ event: "send_success", messageId: "restart-test-1" }));
+    expect(JSON.stringify(audit.mock.calls)).not.toMatch(/972|@s\.whatsapp\.net|restart-safe message|auth|session|qr/i);
     await context.service.stop();
     context.service = undefined;
 

@@ -1,3 +1,4 @@
+import { consoleAuditLogger } from "../audit/AuditLogger.js";
 import { openAppDatabase } from "../db/Database.js";
 import { ScheduledMessageRepository } from "../db/ScheduledMessageRepository.js";
 import { ScheduleError, ScheduleService } from "../domain/ScheduleService.js";
@@ -18,6 +19,7 @@ try {
   console.log(`Cancelled message ${message.id}.`);
   console.log(`status=${message.status}`);
   console.log(`updatedAtUtc=${message.updatedAtUtc}`);
+  consoleAuditLogger({ event: "cancelled", messageId: message.id, status: message.status });
 } catch (error: unknown) {
   if (error instanceof ScheduleError) {
     console.error(`Message was not cancelled. errorCode=${error.code}`);

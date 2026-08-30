@@ -9,6 +9,10 @@ export interface AppConfig {
   readonly webPort: number;
   readonly servicePollMs: number;
   readonly serviceBindHost: string;
+  readonly uiAuthUsername: string;
+  readonly uiAuthPassword?: string;
+  readonly maxScheduledSendsPerMinute: number;
+  readonly backupDir: string;
 }
 
 const projectRoot = process.cwd();
@@ -21,5 +25,9 @@ export const appConfig: AppConfig = {
   logsDir: process.env.LOGS_DIR ?? path.join(projectRoot, "logs"),
   webPort: Number(process.env.PORT ?? "3000"),
   servicePollMs: Number(process.env.SERVICE_POLL_MS ?? "5000"),
-  serviceBindHost: process.env.BIND_HOST ?? "127.0.0.1"
+  serviceBindHost: process.env.BIND_HOST ?? "127.0.0.1",
+  uiAuthUsername: process.env.UI_AUTH_USERNAME ?? "timerbot",
+  uiAuthPassword: process.env.UI_AUTH_PASSWORD,
+  maxScheduledSendsPerMinute: Number(process.env.MAX_SCHEDULED_SENDS_PER_MINUTE ?? "10"),
+  backupDir: process.env.BACKUP_DIR ?? path.join(projectRoot, "backups")
 };

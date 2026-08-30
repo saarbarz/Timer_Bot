@@ -1,3 +1,4 @@
+import { consoleAuditLogger } from "../audit/AuditLogger.js";
 import { openAppDatabase } from "../db/Database.js";
 import { ScheduledMessageRepository } from "../db/ScheduledMessageRepository.js";
 import { ScheduleError, ScheduleService } from "../domain/ScheduleService.js";
@@ -30,6 +31,7 @@ try {
   console.log(`status=${message.status}`);
   console.log(`scheduledAtUtc=${message.scheduledAtUtc}`);
   console.log(`timezone=${message.timezone}`);
+  consoleAuditLogger({ event: "schedule_created", messageId: message.id, status: message.status });
 } catch (error: unknown) {
   if (error instanceof ScheduleError) {
     console.error(`Message was not scheduled. errorCode=${error.code}`);

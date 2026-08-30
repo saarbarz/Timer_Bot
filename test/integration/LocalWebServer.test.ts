@@ -2,6 +2,7 @@ import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
+import { Buffer } from "node:buffer";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -211,6 +212,41 @@ describe("Local web server", () => {
     const qr = await api("GET", "/api/connection/qr");
     expect(qr.body).toEqual({ status: "awaiting_qr", qr: "terminal qr" });
   });
+
+  it("does not serve auth or data paths as static files", async () => {
+    const authFileName = ["creds", "json"].join(".");
+    const authCredsPath = `/${["auth", authFileName].join("/")}`;
+    const traversalPath = `/../${["auth", authFileName].join("/")}`;
+    for (const pathName of [authCredsPath, "/data/timer-bot.sqlite", traversalPath]) {
+      const response = await fetch(`${current().baseUrl}${pathName}`);
+      expect(response.status).toBe(404);
+      expect(await response.text()).not.toMatch(/creds|session|sqlite/i);
+    }
+  });
+
+  it("protects UI/API routes with Basic auth when configured but keeps health sanitized", async () => {
+    await restartServer({
+      auth: {
+        username: "timerbot",
+        password: "local-password"
+      }
+    });
+
+    const unauthorized = await fetch(`${current().baseUrl}/api/messages`);
+    expect(unauthorized.status).toBe(401);
+    expect(await unauthorized.json()).toEqual({ errorCode: "authentication_required" });
+
+    const authorized = await fetch(`${current().baseUrl}/api/messages`, {
+      headers: {
+        Authorization: `Basic ${Buffer.from("timerbot:local-password").toString("base64")}`
+      }
+    });
+    expect(authorized.status).toBe(200);
+
+    const health = await fetch(`${current().baseUrl}/health`);
+    expect(health.status).toBe(200);
+    expect(JSON.stringify(await health.json())).not.toMatch(/auth|session|qr|972|text/i);
+  });
 });
 
 async function api(method: string, pathName: string, body?: unknown): Promise<{ status: number; body: any }> {
@@ -232,4 +268,36 @@ function current(): TestContext {
   }
 
   return context;
+}
+
+async function restartServer(options: Parameters<typeof createLocalWebServer>[0]): Promise<void> {
+  const oldContext = current();
+  await new Promise<void>((resolve, reject) => {
+    oldContext.server.close((error) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve();
+    });
+  });
+
+  const server = createLocalWebServer({
+    databasePath: oldContext.dbPath,
+    connection: oldContext.connection,
+    ...options
+  });
+  await new Promise<void>((resolve) => {
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  const address = server.address();
+  if (address === null || typeof address === "string") {
+    throw new Error("Expected server to listen on a TCP port.");
+  }
+
+  context = {
+    ...oldContext,
+    server,
+    baseUrl: `http://127.0.0.1:${address.port}`
+  };
 }

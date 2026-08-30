@@ -7,14 +7,18 @@ import { ScheduledMessageRepository } from "../db/ScheduledMessageRepository.js"
 import type { ScheduledMessage } from "../domain/ScheduledMessage.js";
 import { ScheduleError, ScheduleService } from "../domain/ScheduleService.js";
 import { formatUtcIsoInZone } from "../cli/scheduleListFormat.js";
+import type { AuditLogger } from "../audit/AuditLogger.js";
 import type { ConnectionController } from "./ConnectionController.js";
 import { getHealthStatus } from "./HealthStatus.js";
+import { authorizeHttpRequest, type HttpAuthOptions } from "./HttpAuth.js";
 import { localWebUiHtml } from "./localWebUiHtml.js";
 import type { RecipientOption } from "../whatsapp/WhatsAppAdapter.js";
 
 export interface LocalWebServerOptions {
   readonly databasePath?: string;
   readonly connection?: ConnectionController;
+  readonly auth?: HttpAuthOptions;
+  readonly audit?: AuditLogger;
 }
 
 export function createLocalWebRequestHandler(options: LocalWebServerOptions = {}): http.RequestListener {
@@ -49,17 +53,21 @@ async function routeRequest(
   const url = new URL(request.url, `http://${request.headers.host ?? "localhost"}`);
   const method = request.method ?? "GET";
 
-  if (method === "GET" && url.pathname === "/") {
-    sendHtml(response, localWebUiHtml);
-    return;
-  }
-
   if (method === "GET" && url.pathname === "/health") {
     const health = getHealthStatus({
       databasePath: options.databasePath,
       connection: options.connection
     });
     sendJson(response, health.ok ? 200 : 503, health);
+    return;
+  }
+
+  if (!authorizeHttpRequest(request, response, options.auth)) {
+    return;
+  }
+
+  if (method === "GET" && url.pathname === "/") {
+    sendHtml(response, localWebUiHtml);
     return;
   }
 
@@ -112,6 +120,7 @@ async function routeRequest(
           scheduledAtLocal: readString(body, "scheduledAtLocal"),
           timezone: readString(body, "timezone")
         });
+        options.audit?.({ event: "schedule_created", messageId: message.id, status: message.status });
         sendJson(response, 201, { message: toApiMessage(message) });
       });
       return;
@@ -158,7 +167,9 @@ async function routeRequest(
 
     if (method === "DELETE") {
       withScheduleService(options, (service) => {
-        sendJson(response, 200, { message: toApiMessage(service.cancel(id)) });
+        const message = service.cancel(id);
+        options.audit?.({ event: "cancelled", messageId: message.id, status: message.status });
+        sendJson(response, 200, { message: toApiMessage(message) });
       });
       return;
     }

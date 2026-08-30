@@ -1,12 +1,15 @@
 import http from "node:http";
 
+import { consoleAuditLogger, type AuditLogger } from "../audit/AuditLogger.js";
 import { appConfig } from "../config/AppConfig.js";
 import { openAppDatabase } from "../db/Database.js";
 import { ScheduledMessageRepository } from "../db/ScheduledMessageRepository.js";
+import { RateLimitedMessageSender } from "../scheduler/RateLimitedMessageSender.js";
 import { SchedulerWorker } from "../scheduler/SchedulerWorker.js";
 import { WhatsAppMessageSender } from "../scheduler/WhatsAppMessageSender.js";
 import type { WhatsAppAdapter } from "../whatsapp/WhatsAppAdapter.js";
 import type { ConnectionController } from "./ConnectionController.js";
+import { assertSecureBindConfiguration, type HttpAuthOptions } from "./HttpAuth.js";
 import { createLocalWebServer } from "./LocalWebServer.js";
 
 export interface SingleUserServiceOptions {
@@ -18,6 +21,9 @@ export interface SingleUserServiceOptions {
   readonly pollMs?: number;
   readonly staleProcessingMs?: number;
   readonly connectOnStart?: boolean;
+  readonly auth?: HttpAuthOptions;
+  readonly audit?: AuditLogger;
+  readonly maxScheduledSendsPerMinute?: number;
 }
 
 export interface RunningSingleUserService {
@@ -26,16 +32,29 @@ export interface RunningSingleUserService {
 }
 
 export async function startSingleUserService(options: SingleUserServiceOptions): Promise<RunningSingleUserService> {
+  const host = options.host ?? appConfig.serviceBindHost;
+  const auth = options.auth ?? {
+    username: appConfig.uiAuthUsername,
+    password: appConfig.uiAuthPassword
+  };
+  assertSecureBindConfiguration(host, auth);
+
   const databasePath = options.databasePath ?? appConfig.databasePath;
   const db = openAppDatabase(databasePath);
   const repository = new ScheduledMessageRepository(db);
-  const worker = new SchedulerWorker(repository, new WhatsAppMessageSender(options.adapter), {
+  const audit = options.audit ?? consoleAuditLogger;
+  const sender = new RateLimitedMessageSender(new WhatsAppMessageSender(options.adapter), {
+    maxSendsPerMinute: options.maxScheduledSendsPerMinute ?? appConfig.maxScheduledSendsPerMinute
+  });
+  const worker = new SchedulerWorker(repository, sender, {
     staleProcessingMs: options.staleProcessingMs
   });
   const pollMs = options.pollMs ?? appConfig.servicePollMs;
   const server = createLocalWebServer({
     databasePath,
-    connection: options.connection
+    connection: options.connection,
+    auth,
+    audit
   });
   let pollTimer: NodeJS.Timeout | undefined;
   let stopped = false;
@@ -50,6 +69,7 @@ export async function startSingleUserService(options: SingleUserServiceOptions):
         const result = await worker.runOnce();
         if (result.claimed > 0 || result.sendFailed > 0 || result.recoveredStaleProcessing > 0) {
           console.log(formatWorkerResult(result));
+          auditWorkerResult(audit, result);
         }
       }
     } catch (error: unknown) {
@@ -65,7 +85,7 @@ export async function startSingleUserService(options: SingleUserServiceOptions):
   };
 
   try {
-    await listen(server, options.port ?? appConfig.webPort, options.host ?? appConfig.serviceBindHost);
+    await listen(server, options.port ?? appConfig.webPort, host);
   } catch (error: unknown) {
     db.close();
     throw error;
@@ -101,6 +121,18 @@ export async function startSingleUserService(options: SingleUserServiceOptions):
       db.close();
     }
   };
+}
+
+function auditWorkerResult(audit: AuditLogger, result: Awaited<ReturnType<SchedulerWorker["runOnce"]>>): void {
+  if (result.messageId === undefined) {
+    return;
+  }
+
+  if (result.sent > 0) {
+    audit({ event: "send_success", messageId: result.messageId, status: result.finalStatus });
+  } else if (result.sendFailed > 0) {
+    audit({ event: "send_failure", messageId: result.messageId, status: result.finalStatus });
+  }
 }
 
 function listen(server: http.Server, port: number, host: string): Promise<void> {

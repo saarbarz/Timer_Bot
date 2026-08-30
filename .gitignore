@@ -9,6 +9,7 @@ auth/
 auth_old/
 data/
 logs/
+backups/
 *.session*
 *.session
 *.session.json
