@@ -11,6 +11,7 @@ describe("schedule list formatting", () => {
   it("prints local time before UTC time without recipient or message text", () => {
     const line = formatScheduleListLine({
       id: "message-id-1",
+      userId: "local-user",
       recipient: "972501234567",
       recipientJid: "972501234567@s.whatsapp.net",
       text: "private message text",

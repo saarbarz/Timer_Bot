@@ -1,6 +1,7 @@
 import { appConfig } from "../config/AppConfig.js";
 import { createManagedBaileysConnectionController } from "./ConnectionController.js";
 import { startSingleUserService } from "./SingleUserService.js";
+import { UserSessionManager } from "./UserSessionManager.js";
 
 const service = await startServiceOrExit();
 
@@ -16,8 +17,14 @@ function closeAndExit(exitCode: number): void {
 }
 
 async function startServiceOrExit() {
-  const managedConnection = createManagedBaileysConnectionController();
   try {
+    if (appConfig.chunk13MultiUserSpike) {
+      return await startSingleUserService({
+        sessionManager: new UserSessionManager()
+      });
+    }
+
+    const managedConnection = createManagedBaileysConnectionController();
     return await startSingleUserService({
       adapter: managedConnection.adapter,
       connection: managedConnection.connection

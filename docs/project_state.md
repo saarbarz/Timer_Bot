@@ -2,9 +2,9 @@
 
 ## Current Position
 
-- Current chunk: Chunk 13 - Multi-user spike design is started.
+- Current chunk: Chunk 13 - Multi-user spike automated implementation is complete; manual two-account WhatsApp verification is pending.
 - Last completed chunk: Chunk 12 - Security Hardening.
-- Next allowed chunk: Chunk 13 implementation, after the design spike boundaries are accepted.
+- Next allowed chunk: Chunk 13 manual two-account verification. Do not move to Chunk 14 until manual acceptance is complete or explicitly waived.
 - WhatsApp code status: Baileys connection adapter exists, manual QR/device linking was confirmed, one-shot text sending behind `WhatsAppAdapter` was confirmed by real manual send tests, scheduled WhatsApp delivery was confirmed by real manual test, and reconnect lifecycle lives in `ConnectionManager`.
 
 ## Environment
@@ -77,7 +77,13 @@
 - Docker runtime now runs as the non-root `node` user after creating `/app/data` and `/app/auth`.
 - `src/index.ts` uses `pathToFileURL` for direct-execution detection so startup smoke output works with Windows paths.
 - Future public or multi-user deployment must not be built by simply exposing the current local service with stronger auth. The plan now includes a public-use safety gate in `docs/future_architecture_plan.md`: keep WhatsApp auth/session state on a user-run local sender agent, and use any future cloud component only as a scheduler/control plane.
-- Chunk 13 starts as a local-only two-session design spike in `docs/chunk13_multi_user_spike_design.md`. Runtime implementation is intentionally not started until the user accepts the design boundaries.
+- Chunk 13 is an opt-in local-only two-session spike enabled with `CHUNK13_MULTI_USER_SPIKE=1`.
+- Chunk 13 adds fixed internal users `test-user-a` and `test-user-b`; arbitrary user ids are rejected.
+- Chunk 13 stores scheduler ownership in `scheduled_messages.user_id` through migration `003_add_user_id_to_scheduled_messages`; pre-existing rows migrate to `local-user`.
+- Chunk 13 per-user auth state lives under `auth/users/<userId>/` and remains ignored/sensitive.
+- Chunk 13 `UserSessionManager` creates separate managed WhatsApp adapters/controllers per fixed user id and records sanitized session metrics.
+- Chunk 13 service mode can run one scheduler worker per fixed local user when the opt-in spike flag is enabled.
+- Chunk 13 local UI/API exposes a local-user selector, `/api/users`, and sanitized `/api/metrics`.
 
 ## Resume Instructions
 
@@ -100,7 +106,8 @@
 17. Chunk 11 single-user deployment is complete and verified by typecheck, full test suite, build, health redaction coverage, process-style restart persistence coverage, and no-duplicate-sent restart coverage. Docker CLI was present, but Docker Desktop/Linux engine was not running, so image build smoke could not start.
 18. Post-Chunk 11 occupied-port fix is complete and committed/pushed.
 19. Chunk 12 security hardening is complete and verified by typecheck, full test suite, build, HTTP auth/path exposure tests, backup exclusion tests, rate-limit tests, audit sanitization tests, secret-pattern scan, and diff check. Docker image build smoke still could not start because Docker Desktop/Linux engine was not running.
-20. Chunk 13 multi-user spike design has started. Implementation should not begin until the design boundaries are accepted.
+20. Chunk 13 design was documented and committed/pushed in `53efad9`.
+21. Chunk 13 automated implementation is complete and verified by typecheck, full test suite, and build. Manual two-account WhatsApp verification is still pending and requires two separate WhatsApp test accounts/devices.
 
 ## Important Caveat
 

@@ -2,12 +2,16 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+import Database from "better-sqlite3";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { openAppDatabase, type SqliteDatabase } from "../../src/db/Database.js";
+import { createScheduledMessagesMigration } from "../../src/db/migrations/001_create_scheduled_messages.js";
+import { addNextAttemptAtMigration } from "../../src/db/migrations/002_add_next_attempt_at.js";
 import { ScheduledMessageRepository } from "../../src/db/ScheduledMessageRepository.js";
 import type { Clock } from "../../src/domain/Clock.js";
 import { ScheduleError, ScheduleService } from "../../src/domain/ScheduleService.js";
+import { defaultUserId } from "../../src/domain/UserId.js";
 
 class MutableClock implements Clock {
   constructor(private current: Date) {}
@@ -54,6 +58,7 @@ describe("ScheduleService SQLite integration", () => {
 
     expect(message).toMatchObject({
       id: "test-id-1",
+      userId: defaultUserId,
       recipient: "972501234567",
       recipientJid: "972501234567@s.whatsapp.net",
       text: "test message",
@@ -70,6 +75,92 @@ describe("ScheduleService SQLite integration", () => {
     const reopenedRepository = new ScheduledMessageRepository(reopened);
     expect(reopenedRepository.findById("test-id-1")).toEqual(message);
     reopened.close();
+  });
+
+  it("scopes list, find, update, and cancel operations by user id", () => {
+    const context = createContext("2026-08-27T09:00:00.000Z");
+    const serviceA = createService(context.repository, context.clock, "test-user-a", "a-message");
+    const serviceB = createService(context.repository, context.clock, "test-user-b", "b-message");
+
+    const messageA = serviceA.create({
+      recipient: "+972501234567",
+      text: "message for a",
+      scheduledAtLocal: "2026-08-27T13:00",
+      timezone: "Asia/Jerusalem"
+    });
+    const messageB = serviceB.create({
+      recipient: "+972501234568",
+      text: "message for b",
+      scheduledAtLocal: "2026-08-27T13:05",
+      timezone: "Asia/Jerusalem"
+    });
+
+    expect(serviceA.list().map((message) => message.id)).toEqual([messageA.id]);
+    expect(serviceB.list().map((message) => message.id)).toEqual([messageB.id]);
+    expect(context.repository.findById(messageA.id, "test-user-b")).toBeUndefined();
+
+    expectScheduleError(() => serviceB.cancel(messageA.id), "scheduled_message_not_found");
+    expect(serviceA.cancel(messageA.id).status).toBe("cancelled");
+    expect(serviceB.list()[0]?.status).toBe("pending");
+  });
+
+  it("migrates existing single-user rows to the default local user id", () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "timer-bot-old-sqlite-"));
+    const dbPath = path.join(tempDir, "timer-bot.sqlite");
+
+    try {
+      const oldDb = new Database(dbPath);
+      oldDb.exec(`
+        CREATE TABLE schema_migrations (
+          id TEXT PRIMARY KEY,
+          applied_at_utc TEXT NOT NULL
+        );
+        ${createScheduledMessagesMigration.sql}
+        INSERT INTO schema_migrations (id, applied_at_utc)
+        VALUES ('${createScheduledMessagesMigration.id}', '2026-08-27T09:00:00.000Z');
+        ${addNextAttemptAtMigration.sql}
+        INSERT INTO schema_migrations (id, applied_at_utc)
+        VALUES ('${addNextAttemptAtMigration.id}', '2026-08-27T09:00:00.000Z');
+      `);
+      oldDb
+        .prepare(
+          `
+            INSERT INTO scheduled_messages (
+              id,
+              recipient,
+              recipient_jid,
+              text,
+              scheduled_at_utc,
+              timezone,
+              status,
+              attempts,
+              created_at_utc,
+              updated_at_utc
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `
+        )
+        .run(
+          "legacy-message",
+          "972501234567",
+          "972501234567@s.whatsapp.net",
+          "legacy text",
+          "2026-08-27T10:00:00.000Z",
+          "Asia/Jerusalem",
+          "pending",
+          0,
+          "2026-08-27T09:00:00.000Z",
+          "2026-08-27T09:00:00.000Z"
+        );
+      oldDb.close();
+
+      const migratedDb = openAppDatabase(dbPath);
+      const repository = new ScheduledMessageRepository(migratedDb);
+      expect(repository.findById("legacy-message")?.userId).toBe(defaultUserId);
+      migratedDb.close();
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 
   it("rejects past scheduled times before writing to SQLite", () => {
@@ -179,6 +270,19 @@ function createContext(nowIso: string): TestContext {
   const context = { dbPath, db, repository, service, clock, tempDir };
   contexts.push(context);
   return context;
+}
+
+function createService(
+  repository: ScheduledMessageRepository,
+  clock: MutableClock,
+  userId: string,
+  nextId: string
+): ScheduleService {
+  return new ScheduleService(repository, {
+    clock,
+    userId,
+    idGenerator: () => nextId
+  });
 }
 
 function expectScheduleError(action: () => unknown, code: ScheduleError["code"]): void {

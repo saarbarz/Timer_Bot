@@ -11,11 +11,13 @@ import type { WhatsAppAdapter } from "../whatsapp/WhatsAppAdapter.js";
 import type { ConnectionController } from "./ConnectionController.js";
 import { assertSecureBindConfiguration, type HttpAuthOptions } from "./HttpAuth.js";
 import { createLocalWebServer } from "./LocalWebServer.js";
+import type { UserSession, UserSessionManager } from "./UserSessionManager.js";
 
 export interface SingleUserServiceOptions {
   readonly databasePath?: string;
-  readonly connection: ConnectionController;
-  readonly adapter: WhatsAppAdapter;
+  readonly connection?: ConnectionController;
+  readonly adapter?: WhatsAppAdapter;
+  readonly sessionManager?: UserSessionManager;
   readonly host?: string;
   readonly port?: number;
   readonly pollMs?: number;
@@ -43,16 +45,12 @@ export async function startSingleUserService(options: SingleUserServiceOptions):
   const db = openAppDatabase(databasePath);
   const repository = new ScheduledMessageRepository(db);
   const audit = options.audit ?? consoleAuditLogger;
-  const sender = new RateLimitedMessageSender(new WhatsAppMessageSender(options.adapter), {
-    maxSendsPerMinute: options.maxScheduledSendsPerMinute ?? appConfig.maxScheduledSendsPerMinute
-  });
-  const worker = new SchedulerWorker(repository, sender, {
-    staleProcessingMs: options.staleProcessingMs
-  });
+  const workerEntries = createWorkerEntries(options, repository);
   const pollMs = options.pollMs ?? appConfig.servicePollMs;
   const server = createLocalWebServer({
     databasePath,
     connection: options.connection,
+    sessionManager: options.sessionManager,
     auth,
     audit
   });
@@ -65,11 +63,13 @@ export async function startSingleUserService(options: SingleUserServiceOptions):
     }
 
     try {
-      if (options.connection.getStatus() === "connected") {
-        const result = await worker.runOnce();
-        if (result.claimed > 0 || result.sendFailed > 0 || result.recoveredStaleProcessing > 0) {
-          console.log(formatWorkerResult(result));
-          auditWorkerResult(audit, result);
+      for (const entry of workerEntries()) {
+        if (entry.connection.getStatus() === "connected") {
+          const result = await entry.worker.runOnce();
+          if (result.claimed > 0 || result.sendFailed > 0 || result.recoveredStaleProcessing > 0) {
+            console.log(formatWorkerResult(result, entry.userId));
+            auditWorkerResult(audit, result);
+          }
         }
       }
     } catch (error: unknown) {
@@ -92,9 +92,17 @@ export async function startSingleUserService(options: SingleUserServiceOptions):
   }
 
   if (options.connectOnStart ?? true) {
-    void options.connection.connect().catch((error: unknown) => {
-      console.error(`WhatsApp startup connection failed. errorName=${error instanceof Error ? error.name : typeof error}`);
-    });
+    if (options.sessionManager !== undefined) {
+      for (const userId of options.sessionManager.listUserIds()) {
+        void options.sessionManager.get(userId).connection.connect().catch((error: unknown) => {
+          console.error(`WhatsApp startup connection failed. userId=${userId} errorName=${error instanceof Error ? error.name : typeof error}`);
+        });
+      }
+    } else {
+      void requireSingleConnection(options).connect().catch((error: unknown) => {
+        console.error(`WhatsApp startup connection failed. errorName=${error instanceof Error ? error.name : typeof error}`);
+      });
+    }
   }
 
   void runWorkerLoop();
@@ -108,7 +116,11 @@ export async function startSingleUserService(options: SingleUserServiceOptions):
         pollTimer = undefined;
       }
 
-      await options.connection.disconnect();
+      if (options.sessionManager !== undefined) {
+        await options.sessionManager.disconnectAll();
+      } else {
+        await requireSingleConnection(options).disconnect();
+      }
       await new Promise<void>((resolve, reject) => {
         server.close((error) => {
           if (error) {
@@ -121,6 +133,71 @@ export async function startSingleUserService(options: SingleUserServiceOptions):
       db.close();
     }
   };
+}
+
+interface WorkerEntry {
+  readonly userId?: string;
+  readonly connection: ConnectionController;
+  readonly worker: SchedulerWorker;
+}
+
+function createWorkerEntries(
+  options: SingleUserServiceOptions,
+  repository: ScheduledMessageRepository
+): () => readonly WorkerEntry[] {
+  if (options.sessionManager !== undefined) {
+    let entries: readonly WorkerEntry[] | undefined;
+    return () => {
+      entries ??= options.sessionManager!.listUserIds().map((userId) => {
+        const session: UserSession = options.sessionManager!.get(userId);
+        return {
+          userId,
+          connection: session.connection,
+          worker: new SchedulerWorker(
+            repository,
+            new RateLimitedMessageSender(new WhatsAppMessageSender(session.adapter), {
+              maxSendsPerMinute: options.maxScheduledSendsPerMinute ?? appConfig.maxScheduledSendsPerMinute
+            }),
+            {
+              staleProcessingMs: options.staleProcessingMs,
+              userId
+            }
+          )
+        };
+      });
+      return entries;
+    };
+  }
+
+  const adapter = requireSingleAdapter(options);
+  const connection = requireSingleConnection(options);
+  const worker = new SchedulerWorker(
+    repository,
+    new RateLimitedMessageSender(new WhatsAppMessageSender(adapter), {
+      maxSendsPerMinute: options.maxScheduledSendsPerMinute ?? appConfig.maxScheduledSendsPerMinute
+    }),
+    {
+      staleProcessingMs: options.staleProcessingMs
+    }
+  );
+
+  return () => [{ connection, worker }];
+}
+
+function requireSingleConnection(options: SingleUserServiceOptions): ConnectionController {
+  if (options.connection === undefined) {
+    throw new Error("Single-user service requires a connection when no session manager is provided.");
+  }
+
+  return options.connection;
+}
+
+function requireSingleAdapter(options: SingleUserServiceOptions): WhatsAppAdapter {
+  if (options.adapter === undefined) {
+    throw new Error("Single-user service requires an adapter when no session manager is provided.");
+  }
+
+  return options.adapter;
 }
 
 function auditWorkerResult(audit: AuditLogger, result: Awaited<ReturnType<SchedulerWorker["runOnce"]>>): void {
@@ -152,9 +229,10 @@ function listen(server: http.Server, port: number, host: string): Promise<void> 
   });
 }
 
-function formatWorkerResult(result: Awaited<ReturnType<SchedulerWorker["runOnce"]>>): string {
+function formatWorkerResult(result: Awaited<ReturnType<SchedulerWorker["runOnce"]>>, userId?: string): string {
   return [
     `timestampUtc=${new Date().toISOString()}`,
+    userId === undefined ? undefined : `userId=${userId}`,
     result.messageId === undefined ? undefined : `messageId=${result.messageId}`,
     result.finalStatus === undefined ? undefined : `status=${result.finalStatus}`,
     result.updatedAtUtc === undefined ? undefined : `updatedAtUtc=${result.updatedAtUtc}`,

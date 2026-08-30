@@ -13,6 +13,7 @@ export interface AppConfig {
   readonly uiAuthPassword?: string;
   readonly maxScheduledSendsPerMinute: number;
   readonly backupDir: string;
+  readonly chunk13MultiUserSpike: boolean;
 }
 
 const projectRoot = process.cwd();
@@ -29,5 +30,6 @@ export const appConfig: AppConfig = {
   uiAuthUsername: process.env.UI_AUTH_USERNAME ?? "timerbot",
   uiAuthPassword: process.env.UI_AUTH_PASSWORD,
   maxScheduledSendsPerMinute: Number(process.env.MAX_SCHEDULED_SENDS_PER_MINUTE ?? "10"),
-  backupDir: process.env.BACKUP_DIR ?? path.join(projectRoot, "backups")
+  backupDir: process.env.BACKUP_DIR ?? path.join(projectRoot, "backups"),
+  chunk13MultiUserSpike: process.env.CHUNK13_MULTI_USER_SPIKE === "1"
 };

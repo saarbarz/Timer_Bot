@@ -81,6 +81,23 @@ export const localWebUiHtml = String.raw`<!doctype html>
         white-space: nowrap;
       }
 
+      .user-select {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .user-select select {
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 8px 10px;
+        background: var(--surface);
+        color: var(--ink);
+        font: inherit;
+      }
+
       .dot {
         width: 10px;
         height: 10px;
@@ -238,6 +255,10 @@ export const localWebUiHtml = String.raw`<!doctype html>
     <header>
       <div class="wrap topbar">
         <h1>Timer Bot</h1>
+        <div class="user-select">
+          <label for="userSelect">Local user</label>
+          <select id="userSelect"></select>
+        </div>
         <div class="status"><span id="statusDot" class="dot"></span><span id="connectionStatus">idle</span></div>
       </div>
     </header>
@@ -282,28 +303,44 @@ export const localWebUiHtml = String.raw`<!doctype html>
       const scheduleForm = document.querySelector("#scheduleForm");
       const recipientOptions = document.querySelector("#recipientOptions");
       const recipientHint = document.querySelector("#recipientHint");
+      const userSelect = document.querySelector("#userSelect");
 
       document.querySelector("#connectButton").addEventListener("click", connectWhatsApp);
       document.querySelector("#refreshConnectionButton").addEventListener("click", refreshConnection);
       scheduleForm.addEventListener("submit", scheduleMessage);
+      userSelect.addEventListener("change", async () => {
+        await refreshConnection();
+        await refreshMessages();
+      });
 
-      refreshConnection();
-      refreshMessages();
+      initializeUsers();
       setInterval(refreshConnection, 3000);
       setInterval(refreshMessages, 5000);
 
+      async function initializeUsers() {
+        const response = await api("/api/users");
+        userSelect.replaceChildren(...response.users.map((userId) => {
+          const option = document.createElement("option");
+          option.value = userId;
+          option.textContent = userId;
+          return option;
+        }));
+        await refreshConnection();
+        await refreshMessages();
+      }
+
       async function connectWhatsApp() {
-        await api("/api/connection/connect", { method: "POST" });
+        await api(userPath("/api/connection/connect"), { method: "POST" });
         await refreshConnection();
       }
 
       async function refreshConnection() {
-        const status = await api("/api/connection");
+        const status = await api(userPath("/api/connection"));
         connectionStatus.textContent = status.status;
         statusDot.className = "dot " + status.status;
         await refreshRecipients();
 
-        const qrResponse = await api("/api/connection/qr");
+        const qrResponse = await api(userPath("/api/connection/qr"));
         if (qrResponse.qr) {
           qr.hidden = false;
           qr.textContent = qrResponse.qr;
@@ -314,7 +351,7 @@ export const localWebUiHtml = String.raw`<!doctype html>
       }
 
       async function refreshRecipients() {
-        const response = await api("/api/recipients");
+        const response = await api(userPath("/api/recipients"));
         recipientOptions.replaceChildren(...response.recipients.map(renderRecipientOption));
         recipientHint.textContent = response.recipients.length === 0 ? "Recent recipients will appear here when available." : "";
       }
@@ -325,6 +362,7 @@ export const localWebUiHtml = String.raw`<!doctype html>
         await api("/api/messages", {
           method: "POST",
           body: JSON.stringify({
+            userId: currentUserId(),
             recipient: form.get("recipient"),
             text: form.get("text"),
             scheduledAtLocal: String(form.get("scheduledAtLocal")).replace(" ", "T"),
@@ -337,7 +375,7 @@ export const localWebUiHtml = String.raw`<!doctype html>
       }
 
       async function refreshMessages() {
-        const response = await api("/api/messages");
+        const response = await api(userPath("/api/messages"));
         messages.replaceChildren(...response.messages.map(renderMessage));
       }
 
@@ -399,16 +437,25 @@ export const localWebUiHtml = String.raw`<!doctype html>
         if (scheduledAtLocal === null) {
           return;
         }
-        await api("/api/messages/" + encodeURIComponent(message.id), {
+        await api(userPath("/api/messages/" + encodeURIComponent(message.id)), {
           method: "PATCH",
-          body: JSON.stringify({ text, scheduledAtLocal, timezone: message.timezone })
+          body: JSON.stringify({ userId: currentUserId(), text, scheduledAtLocal, timezone: message.timezone })
         });
         await refreshMessages();
       }
 
       async function cancelMessage(id) {
-        await api("/api/messages/" + encodeURIComponent(id), { method: "DELETE" });
+        await api(userPath("/api/messages/" + encodeURIComponent(id)), { method: "DELETE" });
         await refreshMessages();
+      }
+
+      function currentUserId() {
+        return userSelect.value || "local-user";
+      }
+
+      function userPath(path) {
+        const separator = path.includes("?") ? "&" : "?";
+        return path + separator + "userId=" + encodeURIComponent(currentUserId());
       }
 
       async function api(path, options = {}) {

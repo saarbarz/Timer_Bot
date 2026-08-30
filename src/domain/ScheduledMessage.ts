@@ -4,6 +4,7 @@ export type ScheduledMessageStatus = (typeof scheduledMessageStatuses)[number];
 
 export interface ScheduledMessage {
   readonly id: string;
+  readonly userId: string;
   readonly recipient: string;
   readonly recipientJid: string;
   readonly text: string;

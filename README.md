@@ -198,6 +198,25 @@ npm.cmd run backup:db
 
 This backs up SQLite only. It does not back up WhatsApp auth/session state.
 
+## Chunk 13 Two-user Local Spike
+
+Normal service mode is still single-user:
+
+```powershell
+npm.cmd run service
+```
+
+The local-only two-session spike is opt-in:
+
+```powershell
+$env:CHUNK13_MULTI_USER_SPIKE='1'
+npm.cmd run service
+```
+
+In spike mode, the UI exposes fixed internal users `test-user-a` and `test-user-b`. Each user gets a separate WhatsApp auth path under `auth/users/<userId>/`, separate scheduler rows by `user_id`, and a separate worker path through `WhatsAppAdapter`.
+
+This is not public SaaS and not production multi-user auth. Live acceptance still requires two separate WhatsApp test accounts/devices.
+
 ## Future Public Deployment Direction
 
 Do not turn the current local single-user service into a public SaaS app by only adding stronger web auth. Before public or multi-user work, follow `docs/future_architecture_plan.md`: keep WhatsApp auth/session state on a user-run local sender agent, and use any future cloud service as a scheduler/control plane.

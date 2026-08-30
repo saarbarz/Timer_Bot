@@ -41,6 +41,7 @@ describe("WhatsAppMessageSender", () => {
 function createMessage(): ScheduledMessage {
   return {
     id: "message-id-1",
+    userId: "local-user",
     recipient: "972501234567",
     recipientJid: "972501234567@s.whatsapp.net",
     text: "scheduled test",

@@ -12,11 +12,13 @@ import type { ConnectionController } from "./ConnectionController.js";
 import { getHealthStatus } from "./HealthStatus.js";
 import { authorizeHttpRequest, type HttpAuthOptions } from "./HttpAuth.js";
 import { localWebUiHtml } from "./localWebUiHtml.js";
+import type { UserSessionManager } from "./UserSessionManager.js";
 import type { RecipientOption } from "../whatsapp/WhatsAppAdapter.js";
 
 export interface LocalWebServerOptions {
   readonly databasePath?: string;
   readonly connection?: ConnectionController;
+  readonly sessionManager?: UserSessionManager;
   readonly auth?: HttpAuthOptions;
   readonly audit?: AuditLogger;
 }
@@ -72,40 +74,57 @@ async function routeRequest(
   }
 
   if (method === "GET" && url.pathname === "/api/connection") {
+    const connection = resolveConnection(options, resolveUserId(url, undefined, options));
     sendJson(response, 200, {
-      status: options.connection?.getStatus() ?? "idle",
-      qrAvailable: options.connection?.getQrTerminal() !== undefined
+      status: connection?.getStatus() ?? "idle",
+      qrAvailable: connection?.getQrTerminal() !== undefined
     });
     return;
   }
 
   if (method === "POST" && url.pathname === "/api/connection/connect") {
-    await options.connection?.connect();
+    const connection = resolveConnection(options, resolveUserId(url, undefined, options));
+    await connection?.connect();
     sendJson(response, 200, {
-      status: options.connection?.getStatus() ?? "idle",
-      qrAvailable: options.connection?.getQrTerminal() !== undefined
+      status: connection?.getStatus() ?? "idle",
+      qrAvailable: connection?.getQrTerminal() !== undefined
     });
     return;
   }
 
   if (method === "GET" && url.pathname === "/api/connection/qr") {
+    const connection = resolveConnection(options, resolveUserId(url, undefined, options));
     sendJson(response, 200, {
-      status: options.connection?.getStatus() ?? "idle",
-      qr: options.connection?.getQrTerminal()
+      status: connection?.getStatus() ?? "idle",
+      qr: connection?.getQrTerminal()
     });
     return;
   }
 
   if (method === "GET" && url.pathname === "/api/recipients") {
+    const connection = resolveConnection(options, resolveUserId(url, undefined, options));
     sendJson(response, 200, {
-      recipients: options.connection?.getRecipientOptions().map(toApiRecipientOption) ?? []
+      recipients: connection?.getRecipientOptions().map(toApiRecipientOption) ?? []
     });
+    return;
+  }
+
+  if (method === "GET" && url.pathname === "/api/users") {
+    sendJson(response, 200, {
+      users: options.sessionManager?.listUserIds() ?? ["local-user"]
+    });
+    return;
+  }
+
+  if (method === "GET" && url.pathname === "/api/metrics" && options.sessionManager !== undefined) {
+    sendJson(response, 200, options.sessionManager.metrics());
     return;
   }
 
   if (url.pathname === "/api/messages") {
     if (method === "GET") {
-      withScheduleService(options, (service) => {
+      const userId = resolveUserId(url, undefined, options);
+      withScheduleService(options, userId, (service) => {
         sendJson(response, 200, { messages: service.list().map(toApiMessage) });
       });
       return;
@@ -113,7 +132,8 @@ async function routeRequest(
 
     if (method === "POST") {
       const body = await readJsonBody(request);
-      withScheduleService(options, (service) => {
+      const userId = resolveUserId(url, body, options);
+      withScheduleService(options, userId, (service) => {
         const message = service.create({
           recipient: readString(body, "recipient"),
           text: readString(body, "text"),
@@ -133,7 +153,8 @@ async function routeRequest(
 
     if (method === "PATCH") {
       const body = await readJsonBody(request);
-      withScheduleService(options, (service, repository) => {
+      const userId = resolveUserId(url, body, options);
+      withScheduleService(options, userId, (service, repository) => {
         const text = optionalString(body, "text");
         const scheduledAtLocal = optionalString(body, "scheduledAtLocal");
         const timezone = optionalString(body, "timezone");
@@ -149,7 +170,7 @@ async function routeRequest(
 
         let updated: ScheduledMessage | undefined;
         if (scheduledAtLocal !== undefined) {
-          const existingTimezone = repository.findById(id)?.timezone ?? appConfig.defaultTimezone;
+          const existingTimezone = repository.findById(id, userId)?.timezone ?? appConfig.defaultTimezone;
           updated = service.updateTime(id, {
             scheduledAtLocal,
             timezone: timezone ?? existingTimezone
@@ -160,13 +181,14 @@ async function routeRequest(
           updated = service.updateText(id, text);
         }
 
-        sendJson(response, 200, { message: toApiMessage(updated ?? repository.findById(id)) });
+        sendJson(response, 200, { message: toApiMessage(updated ?? repository.findById(id, userId)) });
       });
       return;
     }
 
     if (method === "DELETE") {
-      withScheduleService(options, (service) => {
+      const userId = resolveUserId(url, undefined, options);
+      withScheduleService(options, userId, (service) => {
         const message = service.cancel(id);
         options.audit?.({ event: "cancelled", messageId: message.id, status: message.status });
         sendJson(response, 200, { message: toApiMessage(message) });
@@ -180,15 +202,36 @@ async function routeRequest(
 
 function withScheduleService(
   options: LocalWebServerOptions,
+  userId: string,
   action: (service: ScheduleService, repository: ScheduledMessageRepository) => void
 ): void {
   const db = openAppDatabase(options.databasePath);
   try {
     const repository = new ScheduledMessageRepository(db);
-    action(new ScheduleService(repository), repository);
+    action(new ScheduleService(repository, { userId }), repository);
   } finally {
     db.close();
   }
+}
+
+function resolveConnection(options: LocalWebServerOptions, userId: string): ConnectionController | undefined {
+  return options.sessionManager?.get(userId).connection ?? options.connection;
+}
+
+function resolveUserId(
+  url: URL,
+  body: Readonly<Record<string, unknown>> | undefined,
+  options: LocalWebServerOptions
+): string {
+  const fromBody = typeof body?.userId === "string" ? body.userId : undefined;
+  const fromQuery = url.searchParams.get("userId") ?? undefined;
+  const userId = fromBody ?? fromQuery ?? options.sessionManager?.listUserIds()[0] ?? "local-user";
+
+  if (options.sessionManager !== undefined && !options.sessionManager.listUserIds().includes(userId)) {
+    throw new ScheduleError("unknown_user", "Unknown local user id.");
+  }
+
+  return userId;
 }
 
 function toApiMessage(message: ScheduledMessage | undefined): Record<string, unknown> {
@@ -198,6 +241,7 @@ function toApiMessage(message: ScheduledMessage | undefined): Record<string, unk
 
   return {
     id: message.id,
+    userId: message.userId,
     recipient: message.recipient,
     text: message.text,
     scheduledAtUtc: message.scheduledAtUtc,

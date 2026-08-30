@@ -15,6 +15,7 @@ Track open and resolved bugs by chunk or version.
 - Database backups intentionally exclude WhatsApp auth/session state. If auth state is ever backed up manually, it must be protected separately as account-session credential material.
 - Non-local UI/API exposure requires `UI_AUTH_PASSWORD`; this is still single-user Basic auth, not multi-user access control.
 - Public or multi-user deployment is not approved on the current architecture. Before public hosting, redesign around a local sender agent that holds WhatsApp auth/session state locally and a cloud scheduler/control plane that does not centralize WhatsApp session keys.
+- Chunk 13 automated tests prove local isolation logic with fake adapters only. Live two-session stability, reconnect behavior, and revocation behavior still require two separate real WhatsApp test accounts/devices.
 
 ## Resolved Bugs
 

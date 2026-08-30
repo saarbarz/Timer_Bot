@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ConnectionController } from "../../src/server/ConnectionController.js";
 import { createLocalWebServer } from "../../src/server/LocalWebServer.js";
+import { UserSessionManager, type UserSession } from "../../src/server/UserSessionManager.js";
 import type { RecipientOption } from "../../src/whatsapp/WhatsAppAdapter.js";
 
 interface TestContext {
@@ -211,6 +212,75 @@ describe("Local web server", () => {
 
     const qr = await api("GET", "/api/connection/qr");
     expect(qr.body).toEqual({ status: "awaiting_qr", qr: "terminal qr" });
+  });
+
+  it("scopes API messages and connections by fixed local user id", async () => {
+    const connections = new Map<string, FakeConnectionController>();
+    const manager = new UserSessionManager({
+      userIds: ["test-user-a", "test-user-b"],
+      createSession: (userId, authDir) => {
+        const connection = new FakeConnectionController();
+        connections.set(userId, connection);
+        return {
+          userId,
+          authDir,
+          adapter: {
+            connect: connection.connect,
+            disconnect: connection.disconnect,
+            getStatus: () => connection.getStatus(),
+            getRecipientOptions: () => connection.getRecipientOptions(),
+            sendText: async () => ({ success: true as const })
+          },
+          connection,
+          getReconnectCount: () => 0
+        } satisfies UserSession;
+      }
+    });
+    await restartServer({ sessionManager: manager });
+
+    const users = await api("GET", "/api/users");
+    expect(users.body).toEqual({ users: ["test-user-a", "test-user-b"] });
+
+    await api("POST", "/api/messages", {
+      userId: "test-user-a",
+      recipient: "+972501234567",
+      text: "message for a",
+      scheduledAtLocal: "2026-12-15T12:00",
+      timezone: "Asia/Jerusalem"
+    });
+    await api("POST", "/api/messages", {
+      userId: "test-user-b",
+      recipient: "+972501234568",
+      text: "message for b",
+      scheduledAtLocal: "2026-12-15T12:00",
+      timezone: "Asia/Jerusalem"
+    });
+
+    const aMessages = await api("GET", "/api/messages?userId=test-user-a");
+    const bMessages = await api("GET", "/api/messages?userId=test-user-b");
+    expect(aMessages.body.messages).toHaveLength(1);
+    expect(aMessages.body.messages[0]).toMatchObject({ userId: "test-user-a", text: "message for a" });
+    expect(bMessages.body.messages).toHaveLength(1);
+    expect(bMessages.body.messages[0]).toMatchObject({ userId: "test-user-b", text: "message for b" });
+
+    const unknown = await api("GET", "/api/messages?userId=unexpected-user");
+    expect(unknown.status).toBe(400);
+    expect(unknown.body).toMatchObject({ errorCode: "unknown_user" });
+
+    await api("GET", "/api/connection?userId=test-user-a");
+    await api("POST", "/api/connection/connect?userId=test-user-b");
+    expect(connections.get("test-user-a")?.connect).not.toHaveBeenCalled();
+    expect(connections.get("test-user-b")?.connect).toHaveBeenCalledOnce();
+
+    const metrics = await api("GET", "/api/metrics");
+    expect(metrics.body).toMatchObject({
+      activeSessionCount: 2,
+      sessions: expect.arrayContaining([
+        expect.objectContaining({ userId: "test-user-a" }),
+        expect.objectContaining({ userId: "test-user-b" })
+      ])
+    });
+    expect(JSON.stringify(metrics.body)).not.toMatch(/@s\.whatsapp\.net|terminal qr|auth|text|creds/i);
   });
 
   it("does not serve auth or data paths as static files", async () => {

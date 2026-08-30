@@ -14,6 +14,7 @@ export interface SchedulerWorkerOptions {
   readonly clock?: Clock;
   readonly retryPolicy?: SendRetryPolicyOptions;
   readonly staleProcessingMs?: number;
+  readonly userId?: string;
 }
 
 export interface SchedulerWorkerRunResult {
@@ -32,6 +33,7 @@ export class SchedulerWorker {
   private readonly clock: Clock;
   private readonly retryPolicy: SendRetryPolicy;
   private readonly staleProcessingMs: number;
+  private readonly userId: string | undefined;
 
   constructor(
     private readonly repository: ScheduledMessageRepository,
@@ -41,15 +43,17 @@ export class SchedulerWorker {
     this.clock = options.clock ?? systemClock;
     this.retryPolicy = createSendRetryPolicy(options.retryPolicy);
     this.staleProcessingMs = options.staleProcessingMs ?? 10 * 60 * 1_000;
+    this.userId = options.userId;
   }
 
   async runOnce(): Promise<SchedulerWorkerRunResult> {
     const now = this.clock.now();
     const recoveredStaleProcessing = this.repository.recoverStaleProcessing(
       new Date(now.getTime() - this.staleProcessingMs).toISOString(),
-      now.toISOString()
+      now.toISOString(),
+      this.userId
     );
-    const claimed = this.repository.claimNextDuePending(now.toISOString());
+    const claimed = this.repository.claimNextDuePending(now.toISOString(), this.userId);
     if (claimed === undefined) {
       return emptyRunResult(recoveredStaleProcessing);
     }

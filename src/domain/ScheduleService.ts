@@ -6,6 +6,7 @@ import type { Clock } from "./Clock.js";
 import { systemClock } from "./Clock.js";
 import type { ScheduledMessage } from "./ScheduledMessage.js";
 import { localDateTimeToUtc } from "./Timezone.js";
+import { defaultUserId } from "./UserId.js";
 
 export type ScheduleErrorCode =
   | "empty_recipient"
@@ -16,7 +17,8 @@ export type ScheduleErrorCode =
   | "invalid_scheduled_time"
   | "scheduled_time_in_past"
   | "scheduled_message_not_found"
-  | "scheduled_message_not_pending";
+  | "scheduled_message_not_pending"
+  | "unknown_user";
 
 export class ScheduleError extends Error {
   constructor(readonly code: ScheduleErrorCode, message: string) {
@@ -40,11 +42,13 @@ export interface UpdateScheduledMessageTimeInput {
 export interface ScheduleServiceOptions {
   readonly clock?: Clock;
   readonly idGenerator?: () => string;
+  readonly userId?: string;
 }
 
 export class ScheduleService {
   private readonly clock: Clock;
   private readonly idGenerator: () => string;
+  private readonly userId: string;
 
   constructor(
     private readonly repository: ScheduledMessageRepository,
@@ -52,6 +56,7 @@ export class ScheduleService {
   ) {
     this.clock = options.clock ?? systemClock;
     this.idGenerator = options.idGenerator ?? randomUUID;
+    this.userId = options.userId ?? defaultUserId;
   }
 
   create(input: CreateScheduledMessageInput): ScheduledMessage {
@@ -70,6 +75,7 @@ export class ScheduleService {
 
     return this.repository.create({
       id: this.idGenerator(),
+      userId: this.userId,
       recipient: normalized.recipient.phoneNumber,
       recipientJid: normalized.recipient.jid,
       text: input.text,
@@ -81,7 +87,7 @@ export class ScheduleService {
   }
 
   list(): ScheduledMessage[] {
-    return this.repository.list();
+    return this.repository.list(this.userId);
   }
 
   cancel(id: string): ScheduledMessage {
@@ -90,7 +96,7 @@ export class ScheduleService {
       throw new ScheduleError("scheduled_message_not_pending", "Only pending messages can be cancelled.");
     }
 
-    const cancelled = this.repository.cancelPending(id, this.clock.now().toISOString());
+    const cancelled = this.repository.cancelPending(id, this.clock.now().toISOString(), this.userId);
     if (cancelled === undefined) {
       throw new ScheduleError("scheduled_message_not_pending", "Only pending messages can be cancelled.");
     }
@@ -110,7 +116,8 @@ export class ScheduleService {
       id,
       scheduledAtUtc.toISOString(),
       input.timezone,
-      now.toISOString()
+      now.toISOString(),
+      this.userId
     );
 
     if (updated === undefined) {
@@ -130,7 +137,7 @@ export class ScheduleService {
       throw new ScheduleError("empty_text", "Text is required.");
     }
 
-    const updated = this.repository.updatePendingText(id, text, this.clock.now().toISOString());
+    const updated = this.repository.updatePendingText(id, text, this.clock.now().toISOString(), this.userId);
     if (updated === undefined) {
       throw new ScheduleError("scheduled_message_not_pending", "Only pending messages can be edited.");
     }
@@ -139,7 +146,7 @@ export class ScheduleService {
   }
 
   private getExisting(id: string): ScheduledMessage {
-    const existing = this.repository.findById(id);
+    const existing = this.repository.findById(id, this.userId);
     if (existing === undefined) {
       throw new ScheduleError("scheduled_message_not_found", "Scheduled message was not found.");
     }

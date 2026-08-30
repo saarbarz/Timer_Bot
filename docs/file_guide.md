@@ -29,6 +29,7 @@
 - `src/domain/ScheduledMessage.ts`: scheduled message status values and domain shape, including optional `nextAttemptAtUtc` retry timing.
 - `src/domain/ScheduleService.ts`: scheduling CRUD service that validates recipient/text/time, converts local time to UTC, creates pending messages, lists messages, updates pending times, and cancels pending messages.
 - `src/domain/Timezone.ts`: IANA timezone conversion helper for local datetime input to UTC.
+- `src/domain/UserId.ts`: fixed local user ids for the Chunk 13 two-session spike and validation for known local user ids.
 - `src/db/Database.ts`: opens the SQLite database, creates the data directory, applies pragmas, and runs migrations.
 - `src/db/Migrations.ts`: migration runner with `schema_migrations`.
 - `src/db/ScheduledMessageRepository.ts`: SQLite repository for scheduled message create/find/list/cancel/update-time operations, atomic due-message claiming, sent marking, retry scheduling, failed marking, and stale-processing recovery.
@@ -39,6 +40,7 @@
 - `src/scheduler/WhatsAppMessageSender.ts`: adapts stored scheduled messages to the real `WhatsAppAdapter.sendText()` transport API.
 - `src/db/migrations/001_create_scheduled_messages.ts`: creates `scheduled_messages` and its due-message index.
 - `src/db/migrations/002_add_next_attempt_at.ts`: adds `next_attempt_at_utc` and updates the due-message index for retry scheduling.
+- `src/db/migrations/003_add_user_id_to_scheduled_messages.ts`: adds `user_id` ownership to scheduled messages, migrates existing rows to `local-user`, and adds a user-scoped due-message index.
 - `src/cli/waConnect.ts`: manual CLI for opening a Baileys WhatsApp connection and showing the linked-device QR.
 - `src/cli/waSend.ts`: manual one-shot CLI for validating a send request, lazy-loading the Baileys adapter only after validation passes, connecting to WhatsApp, and sending one text message to an explicit phone-number recipient.
 - `src/server/ConnectionController.ts`: in-memory connection/QR/recipient controller for the local web server, backed by `BaileysWhatsAppAdapter` in production and able to expose the managed adapter for the combined service.
@@ -48,7 +50,8 @@
 - `src/server/localWebUiHtml.ts`: minimal local browser UI for connection status, QR display, schedule creation with optional recent recipient suggestions, listing, pending edits, and cancellation.
 - `src/server/SingleUserService.ts`: long-running single-user service runtime that opens/migrates SQLite, serves the local web UI/API, and polls the scheduler worker with one shared WhatsApp adapter.
 - `src/server/startLocalWebServer.ts`: `npm.cmd run web` entry point.
-- `src/server/startSingleUserService.ts`: `npm.cmd run service` entry point with graceful shutdown.
+- `src/server/startSingleUserService.ts`: `npm.cmd run service` entry point with graceful shutdown and optional `CHUNK13_MULTI_USER_SPIKE=1` two-user local spike mode.
+- `src/server/UserSessionManager.ts`: Chunk 13 fixed-user session manager with per-user auth directories, per-user managed connection controllers, per-user disconnect, and sanitized process/session metrics.
 - `src/whatsapp/WhatsAppAdapter.ts`: transport interface, recipient option shape, and internal send result types that future scheduler code must depend on instead of Baileys directly.
 - `src/whatsapp/BaileysConnectionState.ts`: pure mapping from Baileys connection updates to internal connection statuses.
 - `src/whatsapp/ConnectionManager.ts`: centralized lifecycle manager for connection status, bounded reconnect backoff, timer cancellation, and shutdown.
@@ -62,6 +65,7 @@
 - `test/unit/config.test.ts`: Chunk 0 smoke tests for config/startup wiring and the Windows direct-execution regression.
 - `test/integration/DatabaseBackup.test.ts`: Chunk 12 test proving database backup preserves SQLite data without copying auth files.
 - `test/integration/ScheduleService.sqlite.test.ts`: Chunk 4 integration tests against temporary SQLite databases for migrations, create/list/update/cancel rules, persistence after reopen, and timezone conversion.
+- `test/unit/UserSessionManager.test.ts`: Chunk 13 tests for per-user auth directory isolation, unknown-user rejection, sanitized metrics, and disconnecting one session without touching another.
 - `test/integration/SchedulerWorker.sqlite.test.ts`: Chunk 5 through Chunk 8 integration tests for due-message claiming, future/cancelled exclusion, successful sent marking, no duplicate sends, overdue restart behavior, cancelled-message exclusion, reschedule timing, stale-processing recovery, retry backoff, terminal failure, max attempts, recovery after retry, retry metadata cleanup, and migrating an existing Chunk 4 database.
 - `test/integration/LocalWebServer.test.ts`: Chunk 9 through Chunk 12 API/local UI smoke tests against a temporary SQLite database and fake connection controller, including optional recipient suggestions, manual fallback, Basic auth, health sanitization, and auth/data path exposure checks.
 - `test/integration/SingleUserService.test.ts`: Chunk 11 and Chunk 12 service tests for startup migration, health redaction, process-style restart persistence, no duplicate send after a sent row is restarted, non-loopback auth guard, occupied port handling, and sanitized send audit events.

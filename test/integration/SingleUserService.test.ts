@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { openAppDatabase } from "../../src/db/Database.js";
 import { ScheduledMessageRepository } from "../../src/db/ScheduledMessageRepository.js";
 import { startSingleUserService, type RunningSingleUserService } from "../../src/server/SingleUserService.js";
+import { UserSessionManager, type UserSession } from "../../src/server/UserSessionManager.js";
 import type {
   NormalizedRecipient,
   RecipientOption,
@@ -112,7 +113,11 @@ describe("Single-user service", () => {
     const db = openAppDatabase(context.dbPath);
     try {
       const migrations = db.prepare("SELECT id FROM schema_migrations ORDER BY id").all();
-      expect(migrations).toEqual([{ id: "001_create_scheduled_messages" }, { id: "002_add_next_attempt_at" }]);
+      expect(migrations).toEqual([
+        { id: "001_create_scheduled_messages" },
+        { id: "002_add_next_attempt_at" },
+        { id: "003_add_user_id_to_scheduled_messages" }
+      ]);
     } finally {
       db.close();
     }
@@ -204,6 +209,61 @@ describe("Single-user service", () => {
       })
     ).rejects.toMatchObject({ code: "EADDRINUSE" });
   });
+
+  it("runs isolated workers for two fixed local user sessions", async () => {
+    const context = createContext();
+    insertDueMessage(context.dbPath, "message-a", "test-user-a", "972501234567", "message for a");
+    insertDueMessage(context.dbPath, "message-b", "test-user-b", "972501234568", "message for b");
+    const sessions = new Map<string, UserSession>();
+    const adapters = new Map<string, FakeWhatsAppAdapter>();
+    const manager = new UserSessionManager({
+      userIds: ["test-user-a", "test-user-b"],
+      createSession: (userId, authDir) => {
+        const adapter = new FakeWhatsAppAdapter("connected");
+        adapters.set(userId, adapter);
+        const session = {
+          userId,
+          authDir,
+          adapter,
+          connection: new FakeConnectionController(adapter),
+          getReconnectCount: () => 0
+        };
+        sessions.set(userId, session);
+        return session;
+      }
+    });
+
+    context.service = await startSingleUserService({
+      sessionManager: manager,
+      databasePath: context.dbPath,
+      port: 0,
+      pollMs: 25,
+      connectOnStart: false
+    });
+
+    await waitForMessageStatus(context.dbPath, "message-a", "sent");
+    await waitForMessageStatus(context.dbPath, "message-b", "sent");
+
+    expect(adapters.get("test-user-a")?.sentMessages).toEqual([
+      {
+        recipient: {
+          phoneNumber: "972501234567",
+          jid: "972501234567@s.whatsapp.net"
+        },
+        text: "message for a"
+      }
+    ]);
+    expect(adapters.get("test-user-b")?.sentMessages).toEqual([
+      {
+        recipient: {
+          phoneNumber: "972501234568",
+          jid: "972501234568@s.whatsapp.net"
+        },
+        text: "message for b"
+      }
+    ]);
+    expect(sessions.get("test-user-a")?.authDir).not.toBe(sessions.get("test-user-b")?.authDir);
+  });
 });
 
 function createContext(): TestContext {
@@ -216,14 +276,21 @@ function createContext(): TestContext {
   return context;
 }
 
-function insertDueMessage(databasePath: string, id: string): void {
+function insertDueMessage(
+  databasePath: string,
+  id: string,
+  userId = "local-user",
+  recipient = "972501234567",
+  text = "restart-safe message"
+): void {
   const db = openAppDatabase(databasePath);
   try {
     new ScheduledMessageRepository(db).create({
       id,
-      recipient: "972501234567",
-      recipientJid: "972501234567@s.whatsapp.net",
-      text: "restart-safe message",
+      userId,
+      recipient,
+      recipientJid: `${recipient}@s.whatsapp.net`,
+      text,
       scheduledAtUtc: "2026-08-27T09:00:00.000Z",
       timezone: "Asia/Jerusalem",
       createdAtUtc: "2026-08-27T08:00:00.000Z",

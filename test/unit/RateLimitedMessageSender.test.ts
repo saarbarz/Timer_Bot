@@ -42,6 +42,7 @@ describe("RateLimitedMessageSender", () => {
 function testMessage(id: string): ScheduledMessage {
   return {
     id,
+    userId: "local-user",
     recipient: "972501234567",
     recipientJid: "972501234567@s.whatsapp.net",
     text: "test message",

@@ -1025,23 +1025,73 @@ Status: documented.
 
 - Documentation-only change. No runtime behavior changed.
 
-## Chunk 13 - Multi-user Spike Design
+## Chunk 13 - Multi-user Spike
 
-Status: design started; runtime implementation not started.
+Status: automated implementation complete; manual two-account WhatsApp verification pending.
 
 ### Scope
 
-- Start Chunk 13 as a design spike because the source plan's multi-user spike triggers the public-use safety gate.
-- Keep the spike local-only and limited to exactly two fixed internal test users.
-- Define how per-user auth paths, scheduler rows, workers, metrics, and unlink/relink isolation should work before code changes.
+- Started Chunk 13 as a design spike because the source plan's multi-user spike triggers the public-use safety gate.
+- Kept the implementation local-only and limited to exactly two fixed internal test users.
+- Added per-user auth paths, scheduler row ownership, worker scoping, metrics, and unlink/disconnect isolation surfaces.
 - Do not add signup, billing, cloud hosting, production auth, SaaS infrastructure, public deployment, or arbitrary user ids.
 
 ### Files Changed
 
 - `docs/chunk13_multi_user_spike_design.md`: added the two-session local spike design and implementation order.
-- `docs/project_state.md`: updated current position, architecture decisions, and resume instructions for Chunk 13 design.
-- `docs/file_guide.md`: documented the new Chunk 13 design file.
+- `src/domain/UserId.ts`: added fixed local user ids and known-user validation.
+- `src/domain/ScheduledMessage.ts`: added `userId` to scheduled messages.
+- `src/domain/ScheduleService.ts`: scoped create/list/find/update/cancel behavior by service `userId`.
+- `src/db/migrations/003_add_user_id_to_scheduled_messages.ts`: added `user_id` with default `local-user` for existing rows.
+- `src/db/Migrations.ts`: registered the new migration.
+- `src/db/ScheduledMessageRepository.ts`: added user-aware create/list/find/cancel/update/claim/recovery behavior.
+- `src/scheduler/SchedulerWorker.ts`: added optional `userId` scoping.
+- `src/server/ConnectionController.ts`: allowed managed Baileys controllers to receive per-user auth/log options.
+- `src/server/UserSessionManager.ts`: added fixed-user session management, per-user auth paths, per-user disconnect, and sanitized metrics.
+- `src/server/LocalWebServer.ts`: added user-aware API behavior, `/api/users`, and sanitized `/api/metrics`.
+- `src/server/localWebUiHtml.ts`: added local user selector and user-aware API calls.
+- `src/server/SingleUserService.ts`: added optional multi-session mode with one worker per configured local user.
+- `src/server/startSingleUserService.ts`: added `CHUNK13_MULTI_USER_SPIKE=1` opt-in service mode.
+- `src/config/AppConfig.ts`: added `chunk13MultiUserSpike`.
+- `test/integration/ScheduleService.sqlite.test.ts`: added user scoping and legacy-row migration tests.
+- `test/integration/LocalWebServer.test.ts`: added fixed-user API scoping, connection isolation, and metrics tests.
+- `test/integration/SingleUserService.test.ts`: added two-user worker isolation coverage.
+- `test/unit/UserSessionManager.test.ts`: added per-user auth path, unknown-user, metrics, and disconnect isolation tests.
+- `README.md`, `docs/project_state.md`, `docs/file_guide.md`, `docs/bug_log.md`, and `docs/implementation_log.md`: updated for Chunk 13.
+
+### Commands Run
+
+- Extracted the Chunk 13 section from `docs/WhatsApp_Send_Later_Codex_Implementation_Plan_HE.docx`.
+- `npm.cmd run typecheck` -> passed.
+- `npm.cmd test -- test/integration/ScheduleService.sqlite.test.ts` -> passed; 1 test file, 8 tests.
+- `npm.cmd test -- test/integration/ScheduleService.sqlite.test.ts test/integration/LocalWebServer.test.ts test/integration/SingleUserService.test.ts test/unit/UserSessionManager.test.ts` -> passed; 4 test files, 23 tests.
+- `npm.cmd test` -> passed; 19 test files, 84 tests.
+- `npm.cmd run build` -> passed.
 
 ### Verification
 
-- Documentation/design-only change. No runtime behavior changed.
+- Typecheck passed.
+- Build passed.
+- Unit and integration tests passed:
+  - existing single-user service behavior remains compatible.
+  - existing scheduler rows migrate to `userId=local-user`.
+  - schedule/list/find/update/cancel behavior is scoped by `userId`.
+  - two fake user workers send only their own due rows through their own fake adapters.
+  - user A and user B get distinct auth directories.
+  - unknown user ids are rejected.
+  - disconnecting one user session does not disconnect another.
+  - `/api/users` returns only fixed local test users in spike mode.
+  - `/api/metrics` reports process memory/CPU and per-user status/reconnect counts without recipient/JID/message/credential data.
+
+### Manual Test
+
+- No live two-account WhatsApp test was performed.
+- No real WhatsApp QR, connection, contact sync, unlink/relink, or delivery test was performed for Chunk 13.
+- Manual acceptance still requires two separate WhatsApp test accounts/devices.
+
+### Known Limitations
+
+- Chunk 13 is still a local spike, not production multi-user infrastructure.
+- The normal service remains single-user unless `CHUNK13_MULTI_USER_SPIKE=1` is set.
+- Automated tests use fake adapters; they prove isolation logic but not live Baileys stability with two real sessions.
+- Resource measurements are exposed by `/api/metrics`, but real RAM/CPU/stability measurements require a manual run with two live sessions.
