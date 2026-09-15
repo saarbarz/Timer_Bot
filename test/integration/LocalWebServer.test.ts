@@ -112,6 +112,12 @@ describe("Local web server", () => {
     expect(html).toContain('type="date"');
     expect(html).toContain('type="time"');
     expect(html).toContain("scheduledAtLocalFromForm");
+    expect(html).toContain("cancelEditButton");
+    expect(html).toContain("Edit Scheduled Message");
+    expect(html).toContain("showMoreMessagesButton");
+    expect(html).toContain("compareMessagesNewestFirst");
+    expect(html).toContain("messagesPageSize = 10");
+    expect(html).not.toContain("prompt(");
     expect(html).not.toContain("datetime-local");
   });
 
@@ -134,6 +140,7 @@ describe("Local web server", () => {
 
     const id = String(created.body.message.id);
     const updated = await api("PATCH", `/api/messages/${id}`, {
+      recipient: "+972501234568",
       text: "updated web test",
       scheduledAtLocal: "2026-12-15T12:05",
       timezone: "Asia/Jerusalem"
@@ -141,6 +148,7 @@ describe("Local web server", () => {
 
     expect(updated.status).toBe(200);
     expect(updated.body.message).toMatchObject({
+      recipient: "972501234568",
       text: "updated web test",
       scheduledAtLocal: "2026-12-15T12:05:00",
       scheduledAtUtc: "2026-12-15T10:05:00.000Z"
@@ -149,7 +157,7 @@ describe("Local web server", () => {
     const listed = await api("GET", "/api/messages");
     expect(listed.status).toBe(200);
     expect(listed.body.messages).toHaveLength(1);
-    expect(listed.body.messages[0]).toMatchObject({ id, text: "updated web test" });
+    expect(listed.body.messages[0]).toMatchObject({ id, recipient: "972501234568", text: "updated web test" });
 
     const cancelled = await api("DELETE", `/api/messages/${id}`);
     expect(cancelled.status).toBe(200);

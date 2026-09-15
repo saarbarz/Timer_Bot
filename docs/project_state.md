@@ -4,7 +4,7 @@
 
 - Current chunk: Chunk 13 - Multi-user spike basic manual verification is complete; optional unlink/relink isolation remains unconfirmed.
 - Last completed chunk: Chunk 13 - Multi-user spike.
-- Next allowed chunk: Chunk 14 - Product Gate / Go-No-Go report.
+- Next allowed chunk: Chunk 14 - Secure 24/7 MVP plan revision and Product Gate / Go-No-Go report.
 - WhatsApp code status: Baileys connection adapter exists, manual QR/device linking was confirmed, one-shot text sending behind `WhatsAppAdapter` was confirmed by real manual send tests, scheduled WhatsApp delivery was confirmed by real manual test, and reconnect lifecycle lives in `ConnectionManager`.
 
 ## Environment
@@ -58,7 +58,7 @@
 - `schedule:worker` recovers stale `processing` rows after 10 minutes by default, overrideable with `--stale-processing-ms`.
 - Scheduled real sends now pass through `WhatsAppMessageSender`, which adapts stored normalized recipient data to the existing `WhatsAppAdapter.sendText()` API.
 - Chunk 9 adds `npm.cmd run web`, a localhost-only HTTP server at `127.0.0.1:<PORT>` with `PORT=3000` by default.
-- The local web UI supports connection status, in-memory QR display, schedule creation, schedule listing, pending-message text/time edits, and pending-message cancellation.
+- The local web UI supports connection status, in-memory QR display, schedule creation, newest-first schedule listing with 10-at-a-time reveal, pending-message recipient/text/time edits through the schedule form, and pending-message cancellation.
 - The HTTP API is a thin layer over `ScheduleService`; frontend code does not write directly to SQLite.
 - The QR shown through the web API is held in process memory only and is not written to logs or SQLite.
 - Chunk 10 inspected installed Baileys events and found `messaging-history.set`, `chats.upsert`, `chats.update`, `contacts.upsert`, and `contacts.update` available for optional recipient suggestions.
@@ -77,6 +77,7 @@
 - Docker runtime now runs as the non-root `node` user after creating `/app/data` and `/app/auth`.
 - `src/index.ts` uses `pathToFileURL` for direct-execution detection so startup smoke output works with Windows paths.
 - Future public or multi-user deployment must not be built by simply exposing the current local service with stronger auth. The plan now includes a public-use safety gate in `docs/future_architecture_plan.md`: keep WhatsApp auth/session state on a user-run local sender agent, and use any future cloud component only as a scheduler/control plane.
+- `docs/chunk14_secure_24_7_mvp_work_plan.md` drafts the secure 24/7 MVP direction: cloud control plane, local sender agent, encrypted schedule payloads, least-data retention, cheap/free-first cloud and security services, and open questions for user review.
 - Chunk 13 is an opt-in local-only two-session spike enabled with `CHUNK13_MULTI_USER_SPIKE=1`.
 - Chunk 13 adds fixed internal users `test-user-a` and `test-user-b`; arbitrary user ids are rejected.
 - Chunk 13 stores scheduler ownership in `scheduled_messages.user_id` through migration `003_add_user_id_to_scheduled_messages`; pre-existing rows migrate to `local-user`.
@@ -91,14 +92,17 @@
 - `BAILEYS_FULL_HISTORY_SYNC=1` switches Baileys to a desktop-style full-history sync attempt for contact/chat testing. It is opt-in because it can increase startup sync load and still cannot guarantee full contact access.
 - If desktop full-history mode causes a temporary Baileys close loop, the adapter logs a sanitized fallback event and retries with the normal browser profile so service startup can recover.
 - The schedule form now uses separate browser date and time controls and composes the existing backend `scheduledAtLocal` value client-side.
+- Pending-message edits now reuse the existing schedule form instead of browser prompt popups; the form is prefilled from the selected message and submits through the existing PATCH API.
+- The Scheduled Messages section now sorts newest scheduled messages first and initially renders 10 messages, with `Show More` revealing the next 10 at a time.
 
 ## Resume Instructions
 
 1. Read `docs/documentation_instructions.md`.
 2. Read `docs/implementation_log.md`.
 3. Read `docs/future_architecture_plan.md` before any public, multi-user, cloud, or remote-agent planning.
-4. Read `docs/chunk13_multi_user_spike_design.md` before implementing Chunk 13.
-5. Run `git status --short`.
+4. Read `docs/chunk14_secure_24_7_mvp_work_plan.md` before implementing Chunk 14 or any secure 24/7 MVP work.
+5. Read `docs/chunk13_multi_user_spike_design.md` before implementing Chunk 13.
+6. Run `git status --short`.
 6. Chunk 1 manual QR verification is complete. The user confirmed `connection=open` and that WhatsApp shows a new linked device on 2026-08-24.
 7. Chunk 2 manual send verification is complete. The user confirmed one real test message arrived successfully on 2026-08-25.
 8. Chunk 3 manual restart/no-new-QR/send verification is complete. The user confirmed a real send succeeded on 2026-08-27 after reconnecting without a new QR.
@@ -120,6 +124,9 @@
 24. Post-Chunk 13 Baileys contact phone-number/LID mapping fix is implemented and verified by typecheck, recipient option tests, Baileys event handler tests, and local web server integration tests.
 25. Post-Chunk 13 recipient dropdown fallback fix is implemented and verified by typecheck, focused recipient/API tests, build, secret-pattern scan, and diff check. The full test suite had two unrelated SQLite timeout failures under parallel load, and both failed files passed when rerun directly.
 26. Post-Chunk 13 full-history sync experiment and split Send At controls are implemented and verified by typecheck, focused recipient/API tests, full test suite, build, secret-pattern scan, and diff check.
+27. Post-Chunk 13 edit-form UX fix is implemented and verified by typecheck, local web server integration tests, and build.
+28. Post-Chunk 13 scheduled-list UX fix is implemented and verified by typecheck and local web server integration tests.
+29. Chunk 14 secure 24/7 MVP work plan is drafted for user review in `docs/chunk14_secure_24_7_mvp_work_plan.md`. No runtime code changed.
 
 ## Important Caveat
 

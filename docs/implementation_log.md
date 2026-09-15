@@ -1265,3 +1265,113 @@ Status: implemented.
 ### Known Limitation
 
 - If the fallback triggers, the service should recover connectivity, but the experimental desktop full-history attempt is abandoned for that process. This favors a working service over forcing an unstable history-sync profile.
+
+## Post-Chunk 13 UX Fix - Form-Based Pending Edits
+
+Status: implemented.
+
+### Root Cause
+
+- The pending-message edit action used browser `prompt()` dialogs for message text and send time.
+- This interrupted the local UI flow and could not reuse the recipient, message, date, time, and timezone controls already present in the schedule form.
+
+### Files Changed
+
+- `src/server/localWebUiHtml.ts`: changed the edit action to prefill the existing schedule form with the selected pending message, switch the form title/submit button into edit mode, and add a `Cancel Edit` action. Form submission now creates new messages in normal mode and PATCHes the selected message in edit mode.
+- `src/server/LocalWebServer.ts`: PATCH `/api/messages/:id` now accepts optional recipient updates in addition to text/time updates.
+- `src/domain/ScheduleService.ts`: added pending-message recipient editing with the same recipient normalization and validation used by message creation.
+- `src/db/ScheduledMessageRepository.ts`: added a pending-only recipient/JID update.
+- `test/integration/LocalWebServer.test.ts`: added coverage for popup-free edit UI markers and recipient/text/time updates through the PATCH API.
+- `docs/project_state.md`, `docs/file_guide.md`, `docs/bug_log.md`, and `docs/implementation_log.md`: documented the UX fix.
+
+### Commands Run
+
+- `npm.cmd run typecheck` -> passed.
+- `npm.cmd test -- test\integration\LocalWebServer.test.ts` -> passed; 1 test file, 8 tests.
+- `npm.cmd run build` -> passed.
+
+### Verification
+
+- Typecheck passed.
+- Local web server integration tests passed.
+- Build passed.
+- The local UI no longer contains `prompt(` for pending-message edits.
+- Editing a pending message now reuses the schedule form and can save recipient, text, date/time, and timezone through the existing API.
+
+### Known Limitation
+
+- Automated verification does not connect to live WhatsApp. Manual browser confirmation is still useful for the exact feel of the edit flow.
+
+## Post-Chunk 13 UX Fix - Newest-First Scheduled List
+
+Status: implemented.
+
+### Reason
+
+- The Scheduled Messages section rendered the full message list in the order returned by the API.
+- The user wanted newest messages first and a smaller initial list with a manual reveal control.
+
+### Files Changed
+
+- `src/server/localWebUiHtml.ts`: sorts scheduled messages newest-first by scheduled UTC time, renders the first 10 messages, and adds a `Show More` button that reveals the next 10 messages at a time.
+- `test/integration/LocalWebServer.test.ts`: added UI smoke coverage for the show-more button, 10-message page size, and newest-first comparator.
+- `docs/project_state.md`, `docs/file_guide.md`, and `docs/implementation_log.md`: documented the list UX change.
+
+### Commands Run
+
+- `npm.cmd run typecheck` -> passed.
+- `npm.cmd test -- test\integration\LocalWebServer.test.ts` -> passed; 1 test file, 8 tests.
+
+### Verification
+
+- Typecheck passed.
+- Local web server integration tests passed.
+
+### Known Limitation
+
+- Automated verification checks the served UI wiring but does not run a browser interaction test for clicking `Show More`.
+
+## Chunk 14 - Secure 24/7 MVP Work Plan Draft
+
+Status: drafted for user review.
+
+### Scope
+
+- Extend the next Chunk 14 gate from a Go/No-Go report into a secure 24/7 MVP work plan.
+- Keep the current public-use safety gate: do not centralize WhatsApp linked-device auth/session state in the cloud.
+- Emphasize least-data storage, encrypted schedule payloads, local sender agent custody of WhatsApp session material, cheap/free-first service options, security hardening, monitoring, retention, and open product questions.
+- Do not change runtime code.
+
+### Files Changed
+
+- `docs/chunk14_secure_24_7_mvp_work_plan.md`: added the draft MVP architecture and work plan.
+- `docs/future_architecture_plan.md`: linked the Chunk 14 plan from the existing public-use safety gate.
+- `docs/project_state.md`: updated the next allowed chunk and resume instructions.
+- `docs/file_guide.md`: documented the new Chunk 14 plan file.
+- `docs/implementation_log.md`: added this planning entry.
+
+### External Sources Checked
+
+- Cloudflare Workers pricing: https://www.cloudflare.com/developer-platform/products/workers/
+- Cloudflare Zero Trust pricing: https://www.cloudflare.com/plans/zero-trust-services/
+- Turso pricing: https://turso.tech/pricing
+- Supabase pricing: https://supabase.com/pricing
+- Neon pricing: https://neon.com/pricing
+- Railway pricing docs: https://docs.railway.com/reference/pricing/plans
+- Render pricing: https://render.com/pricing
+- Clerk pricing: https://clerk.com/pricing
+- Doppler pricing: https://www.doppler.com/pricing
+- Sentry pricing docs: https://docs.sentry.io/pricing/
+- UptimeRobot: https://uptimerobot.com/
+- GitHub push protection docs: https://docs.github.com/en/code-security/concepts/secret-security/push-protection
+- GitHub secret scanning docs: https://docs.github.com/code-security/secret-scanning/about-secret-scanning
+- WhatsApp Business Platform pricing: https://business.whatsapp.com/products/business-platform/pricing
+
+### Verification
+
+- Documentation-only change. No runtime tests were required.
+
+### User Action Required
+
+- Review the open questions in `docs/chunk14_secure_24_7_mvp_work_plan.md`.
+- Revise the plan after the user chooses MVP audience, 24/7 promise, WhatsApp delivery strategy, first budget target, and data-retention preferences.

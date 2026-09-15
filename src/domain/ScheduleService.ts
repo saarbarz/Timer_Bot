@@ -145,6 +145,31 @@ export class ScheduleService {
     return updated;
   }
 
+  updateRecipient(id: string, recipient: string): ScheduledMessage {
+    const existing = this.getExisting(id);
+    if (existing.status !== "pending") {
+      throw new ScheduleError("scheduled_message_not_pending", "Only pending messages can be edited.");
+    }
+
+    const normalized = normalizeRecipient(recipient);
+    if (!normalized.success) {
+      throw new ScheduleError(toRecipientScheduleErrorCode(normalized.errorCode), "Recipient is invalid.");
+    }
+
+    const updated = this.repository.updatePendingRecipient(
+      id,
+      normalized.recipient.phoneNumber,
+      normalized.recipient.jid,
+      this.clock.now().toISOString(),
+      this.userId
+    );
+    if (updated === undefined) {
+      throw new ScheduleError("scheduled_message_not_pending", "Only pending messages can be edited.");
+    }
+
+    return updated;
+  }
+
   private getExisting(id: string): ScheduledMessage {
     const existing = this.repository.findById(id, this.userId);
     if (existing === undefined) {

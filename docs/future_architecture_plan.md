@@ -46,3 +46,5 @@ This design reduces central security risk, but scheduled sends only work while t
 ## Implementation Gate
 
 If Chunk 13 or any later work changes scope toward public hosting, multi-user accounts, cloud sync, or remote scheduling, stop before coding and create a dedicated architecture chunk for the local sender agent / cloud scheduler split.
+
+Chunk 14 expands this gate into a secure 24/7 MVP work plan in `docs/chunk14_secure_24_7_mvp_work_plan.md`.

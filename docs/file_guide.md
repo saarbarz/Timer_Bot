@@ -27,12 +27,12 @@
 - `src/config/AppConfig.ts`: local configuration for default timezone, generated local paths, web/service ports, bind host, service poll interval, UI auth username/password, send rate limit, backup directory, Chunk 13 spike mode, and opt-in Baileys full-history sync mode.
 - `src/domain/Clock.ts`: injectable clock abstraction for deterministic scheduling tests.
 - `src/domain/ScheduledMessage.ts`: scheduled message status values and domain shape, including optional `nextAttemptAtUtc` retry timing.
-- `src/domain/ScheduleService.ts`: scheduling CRUD service that validates recipient/text/time, converts local time to UTC, creates pending messages, lists messages, updates pending times, and cancels pending messages.
+- `src/domain/ScheduleService.ts`: scheduling CRUD service that validates recipient/text/time, converts local time to UTC, creates pending messages, lists messages, updates pending recipient/text/time values, and cancels pending messages.
 - `src/domain/Timezone.ts`: IANA timezone conversion helper for local datetime input to UTC.
 - `src/domain/UserId.ts`: fixed local user ids for the Chunk 13 two-session spike and validation for known local user ids.
 - `src/db/Database.ts`: opens the SQLite database, creates the data directory, applies pragmas, and runs migrations.
 - `src/db/Migrations.ts`: migration runner with `schema_migrations`.
-- `src/db/ScheduledMessageRepository.ts`: SQLite repository for scheduled message create/find/list/cancel/update-time operations, atomic due-message claiming, sent marking, retry scheduling, failed marking, and stale-processing recovery.
+- `src/db/ScheduledMessageRepository.ts`: SQLite repository for scheduled message create/find/list/cancel/update operations, atomic due-message claiming, sent marking, retry scheduling, failed marking, and stale-processing recovery.
 - `src/scheduler/MessageSender.ts`: fakeable scheduled-message sender abstraction used by the worker.
 - `src/scheduler/RateLimitedMessageSender.ts`: internal per-minute scheduled-send limiter used by service and standalone worker.
 - `src/scheduler/RetryPolicy.ts`: retry/failure classification, default send backoff schedule, max-attempt defaults, unknown-failure behavior, and `last_error` sanitization.
@@ -46,8 +46,8 @@
 - `src/server/ConnectionController.ts`: in-memory connection/QR/recipient controller for the local web server, backed by `BaileysWhatsAppAdapter` in production and able to expose the managed adapter for the combined service.
 - `src/server/HealthStatus.ts`: privacy-safe health report builder for process liveness, DB reachability/migration state, and collapsed WhatsApp connection state.
 - `src/server/HttpAuth.ts`: HTTP Basic auth helpers and non-loopback bind guard for UI/API exposure.
-- `src/server/LocalWebServer.ts`: localhost HTTP request handler and server factory with JSON API routes over `ScheduleService`, connection status, QR display, optional recipient suggestions from Baileys plus local scheduled-recipient fallback, and `/health`.
-- `src/server/localWebUiHtml.ts`: minimal local browser UI for connection status, QR display, schedule creation with optional recent recipient suggestions/fallback dropdown, split date/time scheduling controls, listing, pending edits, and cancellation.
+- `src/server/LocalWebServer.ts`: localhost HTTP request handler and server factory with JSON API routes over `ScheduleService`, connection status, QR display, optional recipient suggestions from Baileys plus local scheduled-recipient fallback, pending recipient/text/time edits, and `/health`.
+- `src/server/localWebUiHtml.ts`: minimal local browser UI for connection status, QR display, schedule creation with optional recent recipient suggestions/fallback dropdown, split date/time scheduling controls, newest-first 10-at-a-time listing, pending edits through the schedule form, and cancellation.
 - `src/server/SingleUserService.ts`: long-running single-user service runtime that opens/migrates SQLite, serves the local web UI/API, and polls the scheduler worker with one shared WhatsApp adapter.
 - `src/server/startLocalWebServer.ts`: `npm.cmd run web` entry point.
 - `src/server/startSingleUserService.ts`: `npm.cmd run service` entry point with graceful shutdown and optional `CHUNK13_MULTI_USER_SPIKE=1` two-user local spike mode.
@@ -67,7 +67,7 @@
 - `test/integration/ScheduleService.sqlite.test.ts`: Chunk 4 integration tests against temporary SQLite databases for migrations, create/list/update/cancel rules, persistence after reopen, and timezone conversion.
 - `test/unit/UserSessionManager.test.ts`: Chunk 13 tests for per-user auth directory isolation, unknown-user rejection, sanitized metrics, and disconnecting one session without touching another.
 - `test/integration/SchedulerWorker.sqlite.test.ts`: Chunk 5 through Chunk 8 integration tests for due-message claiming, future/cancelled exclusion, successful sent marking, no duplicate sends, overdue restart behavior, cancelled-message exclusion, reschedule timing, stale-processing recovery, retry backoff, terminal failure, max attempts, recovery after retry, retry metadata cleanup, and migrating an existing Chunk 4 database.
-- `test/integration/LocalWebServer.test.ts`: Chunk 9 through Chunk 13 API/local UI smoke tests against a temporary SQLite database and fake connection controller, including optional recipient suggestions, scheduled-recipient dropdown fallback, manual recipient entry, Basic auth, health sanitization, and auth/data path exposure checks.
+- `test/integration/LocalWebServer.test.ts`: Chunk 9 through Chunk 13 API/local UI smoke tests against a temporary SQLite database and fake connection controller, including optional recipient suggestions, scheduled-recipient dropdown fallback, manual recipient entry, form-based pending edits, show-more list UI markers, Basic auth, health sanitization, and auth/data path exposure checks.
 - `test/integration/SingleUserService.test.ts`: Chunk 11 and Chunk 12 service tests for startup migration, health redaction, process-style restart persistence, no duplicate send after a sent row is restarted, non-loopback auth guard, occupied port handling, and sanitized send audit events.
 - `test/unit/AuditLogger.test.ts`: Chunk 12 test for sanitized audit logging.
 - `test/unit/BaileysConnectionState.test.ts`: Chunk 1 connection status transition tests.
@@ -90,5 +90,6 @@
 - `docs/file_guide.md`: explanation of important project files.
 - `docs/bug_log.md`: open and resolved bugs by chunk/version.
 - `docs/future_architecture_plan.md`: public-use safety gate and future local sender agent / cloud scheduler architecture direction.
+- `docs/chunk14_secure_24_7_mvp_work_plan.md`: draft work plan for moving the prototype toward a secure 24/7 MVP with least-data storage, cloud/service options, security controls, and open product questions.
 - `docs/chunk13_multi_user_spike_design.md`: local-only two-session Chunk 13 design spike, acceptance mapping, metrics, risks, and implementation order.
 - `docs/WhatsApp_Send_Later_Codex_Implementation_Plan_HE.docx`: source implementation plan copied from the user-provided document.

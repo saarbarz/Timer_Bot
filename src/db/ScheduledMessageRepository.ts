@@ -348,6 +348,31 @@ export class ScheduledMessageRepository {
 
     return result.changes === 0 ? undefined : this.findById(id, userId);
   }
+
+  updatePendingRecipient(
+    id: string,
+    recipient: string,
+    recipientJid: string,
+    updatedAtUtc: string,
+    userId?: string
+  ): ScheduledMessage | undefined {
+    const result = this.db
+      .prepare(
+        `
+          UPDATE scheduled_messages
+          SET recipient = ?, recipient_jid = ?, updated_at_utc = ?
+          WHERE id = ? AND status = 'pending'
+          ${userId === undefined ? "" : "AND user_id = ?"}
+        `
+      )
+      .run(
+        ...(userId === undefined
+          ? [recipient, recipientJid, updatedAtUtc, id]
+          : [recipient, recipientJid, updatedAtUtc, id, userId])
+      );
+
+    return result.changes === 0 ? undefined : this.findById(id, userId);
+  }
 }
 
 function mapScheduledMessage(row: ScheduledMessageRow): ScheduledMessage {

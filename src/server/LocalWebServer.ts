@@ -169,11 +169,12 @@ async function routeRequest(
       const userId = resolveUserId(url, body, options);
       withScheduleService(options, userId, (service, repository) => {
         const text = optionalString(body, "text");
+        const recipient = optionalString(body, "recipient");
         const scheduledAtLocal = optionalString(body, "scheduledAtLocal");
         const timezone = optionalString(body, "timezone");
 
-        if (text === undefined && scheduledAtLocal === undefined) {
-          sendJson(response, 400, { errorCode: "empty_update", message: "Provide text or scheduledAtLocal." });
+        if (recipient === undefined && text === undefined && scheduledAtLocal === undefined) {
+          sendJson(response, 400, { errorCode: "empty_update", message: "Provide recipient, text, or scheduledAtLocal." });
           return;
         }
 
@@ -182,6 +183,10 @@ async function routeRequest(
         }
 
         let updated: ScheduledMessage | undefined;
+        if (recipient !== undefined) {
+          updated = service.updateRecipient(id, recipient);
+        }
+
         if (scheduledAtLocal !== undefined) {
           const existingTimezone = repository.findById(id, userId)?.timezone ?? appConfig.defaultTimezone;
           updated = service.updateTime(id, {

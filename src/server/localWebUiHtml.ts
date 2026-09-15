@@ -181,6 +181,12 @@ export const localWebUiHtml = String.raw`<!doctype html>
         gap: 10px;
       }
 
+      .show-more-row {
+        display: flex;
+        justify-content: center;
+        margin-top: 12px;
+      }
+
       .message-row {
         display: grid;
         grid-template-columns: 1.2fr 0.8fr 1fr 1.6fr auto;
@@ -205,6 +211,16 @@ export const localWebUiHtml = String.raw`<!doctype html>
         display: flex;
         gap: 8px;
         justify-content: flex-end;
+      }
+
+      .form-actions {
+        display: flex;
+        gap: 8px;
+        align-self: end;
+      }
+
+      .form-actions button {
+        flex: 1;
       }
 
       .qr {
@@ -280,6 +296,10 @@ export const localWebUiHtml = String.raw`<!doctype html>
           justify-content: flex-start;
           flex-wrap: wrap;
         }
+
+        .form-actions {
+          align-self: stretch;
+        }
       }
     </style>
   </head>
@@ -308,7 +328,7 @@ export const localWebUiHtml = String.raw`<!doctype html>
       </section>
 
       <section>
-        <h2>Schedule Message</h2>
+        <h2 id="scheduleFormTitle">Schedule Message</h2>
         <form id="scheduleForm">
           <label>
             Recipient
@@ -329,7 +349,10 @@ export const localWebUiHtml = String.raw`<!doctype html>
             </span>
           </label>
           <label>Timezone<input name="timezone" value="Asia/Jerusalem" /></label>
-          <button type="submit">Schedule</button>
+          <span class="form-actions">
+            <button id="scheduleSubmitButton" type="submit">Schedule</button>
+            <button id="cancelEditButton" class="secondary" type="button" hidden>Cancel Edit</button>
+          </span>
         </form>
       </section>
 
@@ -337,6 +360,9 @@ export const localWebUiHtml = String.raw`<!doctype html>
         <h2>Scheduled Messages</h2>
         <div id="notice" class="notice"></div>
         <div id="messages" class="messages"></div>
+        <div class="show-more-row">
+          <button id="showMoreMessagesButton" class="secondary" type="button" hidden>Show More</button>
+        </div>
       </section>
     </main>
     <script>
@@ -347,15 +373,28 @@ export const localWebUiHtml = String.raw`<!doctype html>
       const notice = document.querySelector("#notice");
       const messages = document.querySelector("#messages");
       const scheduleForm = document.querySelector("#scheduleForm");
+      const scheduleFormTitle = document.querySelector("#scheduleFormTitle");
+      const scheduleSubmitButton = document.querySelector("#scheduleSubmitButton");
+      const cancelEditButton = document.querySelector("#cancelEditButton");
       const recipientInput = scheduleForm.elements.recipient;
       const recipientSelect = document.querySelector("#recipientSelect");
       const recipientHint = document.querySelector("#recipientHint");
       const userSelect = document.querySelector("#userSelect");
+      const showMoreMessagesButton = document.querySelector("#showMoreMessagesButton");
       let recipientOptionsSignature = "";
+      let editingMessage = null;
+      let allMessages = [];
+      let visibleMessageCount = 10;
+      const messagesPageSize = 10;
 
       document.querySelector("#connectButton").addEventListener("click", connectWhatsApp);
       document.querySelector("#refreshConnectionButton").addEventListener("click", refreshConnection);
-      scheduleForm.addEventListener("submit", scheduleMessage);
+      scheduleForm.addEventListener("submit", saveMessage);
+      cancelEditButton.addEventListener("click", resetScheduleForm);
+      showMoreMessagesButton.addEventListener("click", () => {
+        visibleMessageCount += messagesPageSize;
+        renderVisibleMessages();
+      });
       recipientSelect.addEventListener("change", () => {
         if (recipientSelect.value) {
           recipientInput.value = recipientSelect.value;
@@ -363,6 +402,8 @@ export const localWebUiHtml = String.raw`<!doctype html>
         }
       });
       userSelect.addEventListener("change", async () => {
+        resetScheduleForm();
+        visibleMessageCount = messagesPageSize;
         recipientOptionsSignature = "";
         renderRecipientSelect([]);
         await refreshConnection();
@@ -427,27 +468,51 @@ export const localWebUiHtml = String.raw`<!doctype html>
             : "";
       }
 
-      async function scheduleMessage(event) {
+      async function saveMessage(event) {
         event.preventDefault();
         const form = new FormData(scheduleForm);
-        await api("/api/messages", {
-          method: "POST",
-          body: JSON.stringify({
-            userId: currentUserId(),
-            recipient: form.get("recipient"),
-            text: form.get("text"),
-            scheduledAtLocal: scheduledAtLocalFromForm(form),
-            timezone: form.get("timezone")
-          })
-        });
-        scheduleForm.reset();
-        scheduleForm.elements.timezone.value = "Asia/Jerusalem";
+        const payload = {
+          userId: currentUserId(),
+          recipient: form.get("recipient"),
+          text: form.get("text"),
+          scheduledAtLocal: scheduledAtLocalFromForm(form),
+          timezone: form.get("timezone")
+        };
+        if (editingMessage) {
+          await api(userPath("/api/messages/" + encodeURIComponent(editingMessage.id)), {
+            method: "PATCH",
+            body: JSON.stringify(payload)
+          });
+        } else {
+          await api("/api/messages", {
+            method: "POST",
+            body: JSON.stringify(payload)
+          });
+        }
+        resetScheduleForm();
         await refreshMessages();
       }
 
       async function refreshMessages() {
         const response = await api(userPath("/api/messages"));
-        messages.replaceChildren(...response.messages.map(renderMessage));
+        allMessages = response.messages.slice().sort(compareMessagesNewestFirst);
+        visibleMessageCount = Math.min(Math.max(visibleMessageCount, messagesPageSize), allMessages.length || messagesPageSize);
+        renderVisibleMessages();
+      }
+
+      function renderVisibleMessages() {
+        const visibleMessages = allMessages.slice(0, visibleMessageCount);
+        messages.replaceChildren(...visibleMessages.map(renderMessage));
+        showMoreMessagesButton.hidden = visibleMessageCount >= allMessages.length;
+      }
+
+      function compareMessagesNewestFirst(left, right) {
+        const scheduledComparison = String(right.scheduledAtUtc || "").localeCompare(String(left.scheduledAtUtc || ""));
+        if (scheduledComparison !== 0) {
+          return scheduledComparison;
+        }
+
+        return String(right.createdAtUtc || "").localeCompare(String(left.createdAtUtc || ""));
       }
 
       function renderMessage(message) {
@@ -545,19 +610,31 @@ export const localWebUiHtml = String.raw`<!doctype html>
       }
 
       async function editMessage(message) {
-        const text = prompt("Message text", message.text);
-        if (text === null) {
-          return;
-        }
-        const scheduledAtLocal = prompt("Send at", message.scheduledAtLocal);
-        if (scheduledAtLocal === null) {
-          return;
-        }
-        await api(userPath("/api/messages/" + encodeURIComponent(message.id)), {
-          method: "PATCH",
-          body: JSON.stringify({ userId: currentUserId(), text, scheduledAtLocal, timezone: message.timezone })
-        });
-        await refreshMessages();
+        editingMessage = message;
+        scheduleFormTitle.textContent = "Edit Scheduled Message";
+        scheduleSubmitButton.textContent = "Save Edit";
+        cancelEditButton.hidden = false;
+        scheduleForm.elements.recipient.value = message.recipient || "";
+        scheduleForm.elements.text.value = message.text || "";
+        scheduleForm.elements.timezone.value = message.timezone || "Asia/Jerusalem";
+        setScheduledAtFields(message.scheduledAtLocal);
+        scheduleForm.scrollIntoView({ behavior: "smooth", block: "start" });
+        recipientInput.focus();
+      }
+
+      function resetScheduleForm() {
+        editingMessage = null;
+        scheduleForm.reset();
+        scheduleForm.elements.timezone.value = "Asia/Jerusalem";
+        scheduleFormTitle.textContent = "Schedule Message";
+        scheduleSubmitButton.textContent = "Schedule";
+        cancelEditButton.hidden = true;
+      }
+
+      function setScheduledAtFields(scheduledAtLocal) {
+        const [date = "", timeWithSeconds = ""] = String(scheduledAtLocal || "").split("T");
+        scheduleForm.elements.scheduledDate.value = date;
+        scheduleForm.elements.scheduledTime.value = timeWithSeconds.slice(0, 5);
       }
 
       async function cancelMessage(id) {
